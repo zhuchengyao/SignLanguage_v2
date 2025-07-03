@@ -1,71 +1,171 @@
-import os, json, numpy as np, torch
+# data_loader.py
+from __future__ import annotations
+import os, json
+from typing import List, Optional, Sequence, Tuple
+
+import numpy as np
+import torch
 from torch.utils.data import Dataset, DataLoader
 
-def reshape_body(lst: list[float]) -> np.ndarray:
-    """body list 长度 24 或 72 → 返回 (8,3)"""
-    arr = np.array(lst, dtype=np.float32)
-    if len(arr) == 24:          # 已是 8×3
-        return arr.reshape(8, 3)
-    if len(arr) == 72:          # 24×3 取 0,1,2,5,6,7,8,11 (8 joints)
-        arr = arr.reshape(24, 3)
-        idx = [0, 1, 2, 5, 8, 11, 14, 17]
-        return arr[idx]
-    raise ValueError("body len neither 24 nor 72")
+from dataloader_utils import collate_pose_batch
 
-def reshape_hand(lst: list[float]) -> np.ndarray:
-    """hand list 长度 63 或 189 → 前 21 joints (21,3)"""
-    arr = np.array(lst, dtype=np.float32)
-    if len(arr) == 63:
-        return arr.reshape(21, 3)
-    if len(arr) == 189:
-        return arr.reshape(63, 3)[:21]
-    # 其他情况补零
-    if len(arr) == 0:
-        return np.zeros((21, 3), dtype=np.float32)
-    raise ValueError("unexpected hand length")
 
+# ════════════════════════════════════════════════════════════════════════
+#                       Dataset: ASLPoseDataset
+# ════════════════════════════════════════════════════════════════════════
 class ASLPoseDataset(Dataset):
-    def __init__(self, root: str, split="train", clip_len=32):
-        self.root, self.split, self.clip_len = root, split, clip_len
-        self.texts, self.poses = [], []; self._load()
+    """
+    ASL Pose 数据集
 
-    def _load(self):
-        pdir = os.path.join(self.root, self.split)
-        dirs = sorted(d for d in os.listdir(pdir) if os.path.isdir(os.path.join(pdir, d)))
-        keep = 0
-        for d in dirs:
-            t_path = os.path.join(pdir, d, "text.txt")
-            j_path = os.path.join(pdir, d, "pose.json")
-            if not (os.path.exists(t_path) and os.path.exists(j_path)):
+    目录结构::
+        data_root/
+            train/  {sample}/text.txt,  pose.json
+            dev/    ...
+            test/   ...
+
+    pose.json schema::
+        {
+          "poses": [
+            { "pose_keypoints_2d": [...24],
+              "hand_left_keypoints_2d": [...63],
+              "hand_right_keypoints_2d": [...63] },
+            ...
+          ]
+        }
+    """
+    def __init__(
+        self,
+        data_root: str,
+        split: str,
+        max_samples: Optional[int] = None,
+        pose_normalize: bool = True,
+        pose_clip_range: float = 8.0,
+        truncate_len: Optional[int] = None,     # 可选：截断过长序列
+        extern_mean: Optional[Sequence[float]] = None,
+        extern_std: Optional[Sequence[float]] = None,
+    ) -> None:
+        super().__init__()
+        self.data_root       = data_root
+        self.split           = split
+        self.pose_normalize  = pose_normalize
+        self.pose_clip_range = pose_clip_range
+        self.truncate_len    = truncate_len
+
+        self.extern_mean = None if extern_mean is None else np.asarray(extern_mean)
+        self.extern_std  = None if extern_std  is None else np.asarray(extern_std)
+
+        self.texts:  List[str]             = []
+        self.poses:  List[List[List[float]]] = []   # 每条 (T,150)
+
+        self._load_samples(max_samples)
+
+        if self.extern_mean is not None and self.extern_std is not None:
+            self.pose_mean, self.pose_std = self.extern_mean, self.extern_std
+            self._apply_norm("external μ/σ")
+        elif self.pose_normalize and self.poses:
+            self._compute_and_apply_norm()
+
+    # ───────────────────────────────────────────────
+    # internal helpers
+    # ───────────────────────────────────────────────
+    def _load_samples(self, max_samples: Optional[int]) -> None:
+        split_dir = os.path.join(self.data_root, self.split)
+        if not os.path.isdir(split_dir):
+            raise FileNotFoundError(f"❌ Path not found: {split_dir}")
+
+        ids = sorted(p for p in os.listdir(split_dir)
+                     if os.path.isdir(os.path.join(split_dir, p)))
+        print(f"🔍 {self.split}: {len(ids)} samples detected")
+
+        for sid in ids:
+            base = os.path.join(split_dir, sid)
+            txt_f  = os.path.join(base, "text.txt")
+            pose_f = os.path.join(base, "pose.json")
+            if not (os.path.exists(txt_f) and os.path.exists(pose_f)):
                 continue
-            text = open(t_path, "r", encoding="utf-8").read().strip()
-            frames = json.load(open(j_path, "r", encoding="utf-8")).get("poses", [])
-            seq = []
-            for fr in frames[: self.clip_len]:
-                try:
-                    body  = reshape_body(fr.get("pose_keypoints_2d",  []))
-                    right = reshape_hand(fr.get("hand_right_keypoints_2d", []))
-                    left  = reshape_hand(fr.get("hand_left_keypoints_2d",  []))
-                except ValueError:
-                    continue
-                p50 = np.vstack([body, right, left])       # (50,3)
-                seq.append(p50.reshape(150).tolist())
-            if not seq: continue
-            while len(seq) < self.clip_len: seq.append(seq[-1].copy())
-            self.texts.append(text); self.poses.append(seq); keep += 1
-        print(f"✅ {self.split}: kept {keep} clips")
 
-    def __len__(self): return len(self.texts)
-    def __getitem__(self, idx):
+            try:
+                text = open(txt_f, "r", encoding="utf-8").read().strip()
+                js   = json.load(open(pose_f, "r", encoding="utf-8"))
+            except Exception:
+                continue  # skip corrupt
+
+            frames = js.get("poses", [])
+            if not frames:
+                continue
+
+            seq: List[List[float]] = []
+            for fr in frames:
+                pose = (fr["pose_keypoints_2d"]
+                        + fr["hand_right_keypoints_2d"]
+                        + fr["hand_left_keypoints_2d"])
+                if len(pose) == 150:
+                    seq.append(pose)
+                if self.truncate_len and len(seq) >= self.truncate_len:
+                    break
+            if not seq:
+                continue
+
+            self.texts.append(text)
+            self.poses.append(seq)
+            if max_samples and len(self.texts) >= max_samples:
+                break
+
+        print(f"✅ {self.split}: loaded {len(self.texts)} samples")
+
+    def _compute_and_apply_norm(self) -> None:
+        all_frames = np.concatenate([np.array(p) for p in self.poses], axis=0)
+        self.pose_mean = all_frames.mean(0)
+        self.pose_std  = all_frames.std(0)
+        self._apply_norm("auto μ/σ")
+
+    def _apply_norm(self, tag: str) -> None:
+        out = []
+        for seq in self.poses:
+            arr = (np.asarray(seq) - self.pose_mean) / (self.pose_std + 1e-8)
+            arr = np.clip(arr, -self.pose_clip_range, self.pose_clip_range)
+            out.append(arr.tolist())
+        self.poses = out
+        m, s = self.pose_mean.mean(), self.pose_std.mean()
+        print(f"  Normalize ({tag}): μ≈{m:.3f}, σ≈{s:.3f}")
+
+    # ───────────────────────────────────────────────
+    # dataset interface
+    # ───────────────────────────────────────────────
+    def __len__(self) -> int:
+        return len(self.texts)
+
+    def __getitem__(self, idx: int):
         return self.texts[idx], torch.tensor(self.poses[idx], dtype=torch.float32)
 
+
+# ════════════════════════════════════════════════════════════════════════
+#                      factory: create_data_loaders
+# ════════════════════════════════════════════════════════════════════════
 def create_data_loaders(cfg):
-    kw = dict(batch_size=cfg.batch_size, num_workers=0, pin_memory=True)
-    tr = ASLPoseDataset(cfg.data_root, "train", cfg.clip_len)
-    if len(tr)==0:
-        raise RuntimeError("train split empty ― 检查数据目录！")
-    dv = ASLPoseDataset(cfg.data_root, "dev", cfg.clip_len)
-    te = ASLPoseDataset(cfg.data_root, "test", cfg.clip_len)
-    return (DataLoader(tr, shuffle=True, **kw),
-            DataLoader(dv, **kw) if len(dv) else None,
-            DataLoader(te, **kw) if len(te) else None)
+    train_set = ASLPoseDataset(cfg.data_root, "train",
+                               pose_normalize=cfg.pose_normalize,
+                               pose_clip_range=cfg.pose_clip_range)
+
+    dev_set   = ASLPoseDataset(cfg.data_root, "dev",
+                               pose_normalize=False,
+                               pose_clip_range=cfg.pose_clip_range,
+                               extern_mean=train_set.pose_mean,
+                               extern_std=train_set.pose_std)
+
+    test_set  = ASLPoseDataset(cfg.data_root, "test",
+                               pose_normalize=False,
+                               pose_clip_range=cfg.pose_clip_range,
+                               extern_mean=train_set.pose_mean,
+                               extern_std=train_set.pose_std)
+
+    kwargs = dict(batch_size=cfg.batch_size,
+                  num_workers=0, pin_memory=True)
+
+    train_loader = DataLoader(train_set, shuffle=True, drop_last=True,
+                              collate_fn=collate_pose_batch, **kwargs)
+    dev_loader   = DataLoader(dev_set,   shuffle=False,
+                              collate_fn=collate_pose_batch, **kwargs)
+    test_loader  = DataLoader(test_set,  shuffle=False,
+                              collate_fn=collate_pose_batch, **kwargs)
+    return train_loader, dev_loader, test_loader

@@ -1,9 +1,10 @@
+# train.py (Stage 2: Latent Diffusion Training)
 # ======================================================================
-#  Training script · var-len Spatio-Temporal Text-to-Pose Diffusion
+#  Training script · Latent Diffusion for Text-to-Pose
 #  Compatible with:
-#     • model.py          (TextToPoseDiffusion, var-len)
-#     • config.py         (ModelConfig & TrainConfig)
-#     • data_loader.py    (create_data_loaders → 返回 mask)
+#     • model.py          (LatentDiffusion)
+#     • config.py         (ModelConfig for Stage 2)
+#     • data_loader.py    (create_data_loaders → no changes needed)
 # ======================================================================
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 # ---------- project modules ----------
-from model   import TextToPoseDiffusion
+from model   import LatentDiffusion  # ✨ CHANGED: 导入新的 LatentDiffusion 模型
 from config  import ModelConfig, TrainConfig
 from data_loader import create_data_loaders
 from types import SimpleNamespace
@@ -31,6 +32,7 @@ data_cfg = SimpleNamespace(**vars(m_cfg), **vars(t_cfg))
 
 # ════════════════════════════════════════════════════════════════════
 #  LR scheduler (warm-up + cosine)
+# (无需改动)
 # ════════════════════════════════════════════════════════════════════
 def build_scheduler(optimizer: optim.Optimizer, cfg: TrainConfig,
                     steps_per_epoch: int):
@@ -61,11 +63,13 @@ def save_checkpoint(model, optimizer, scheduler, scaler,
         scaler_state_dict    = scaler.state_dict(),
         model_cfg = asdict(m_cfg),
         train_cfg = asdict(t_cfg),
-        model_type= "text_to_pose_diffusion_varlen",
+        # ✨ CHANGED: 更新模型类型元数据 (可选，但推荐)
+        model_type= "latent_diffusion_v2",
     )
     torch.save(ckpt, path)
     print(f"💾  Saved → {path}")
 
+# (load_checkpoint 无需改动)
 def load_checkpoint(model, optimizer, scheduler, scaler, path: str):
     ckpt = torch.load(path, map_location="cpu")
     model.load_state_dict(ckpt["model_state_dict"])
@@ -76,6 +80,7 @@ def load_checkpoint(model, optimizer, scheduler, scaler, path: str):
 
 # ════════════════════════════════════════════════════════════════════
 #  train / eval
+# (无需改动)
 # ════════════════════════════════════════════════════════════════════
 def train_epoch(model, loader, optimizer, scheduler, scaler, device, ep):
     model.train(); tot, n = 0.0, 0
@@ -105,20 +110,21 @@ def eval_epoch(model, loader, device):
 
 # ════════════════════════════════════════════════════════════════════
 #  dataset stats (μ / σ) — 仅首次
+# (无需改动)
 # ════════════════════════════════════════════════════════════════════
 def compute_dataset_stats(loader):
     sums = torch.zeros(m_cfg.pose_dim)
     sqs  = torch.zeros(m_cfg.pose_dim)
     count = 0
     for _, pose, mask in tqdm(loader, desc="📊 computing μ/σ"):
-        # mask:(B,T)  True=valid
-        valid = mask.unsqueeze(-1).expand_as(pose)   # (B,T,150)
-        pose_valid = pose * valid                    # pad 区是 0
+        valid = mask.unsqueeze(-1).expand_as(pose)
+        pose_valid = pose * valid
         sums  += pose_valid.sum((0,1))
         sqs   += (pose_valid ** 2).sum((0,1))
-        count += valid.sum().item()
-    mean = sums / count
-    var  = sqs / count - mean ** 2
+        # 计算有效帧的总数
+        count += valid.sum((0,1))
+    mean = sums / count.clamp(min=1)
+    var  = sqs / count.clamp(min=1) - mean ** 2
     std  = torch.sqrt(torch.clamp(var, min=1e-6))
     return mean, std
 
@@ -128,6 +134,7 @@ def compute_dataset_stats(loader):
 def main():
     device = torch.device(m_cfg.device)
     torch.manual_seed(42); np.random.seed(42)
+    print("► Starting Training for Stage 2: Latent Diffusion Model")
     print("► device:", device)
 
     # loaders (首次)
@@ -135,19 +142,25 @@ def main():
 
     # mean / std
     if m_cfg.pose_normalize and torch.all(m_cfg.std == 1):
-        mean, std = compute_dataset_stats(tr_loader)
-        m_cfg.mean, m_cfg.std = mean, std
-        tr_loader, val_loader, test_loader = create_data_loaders(data_cfg)
-        print("✅  μ/σ computed & loaders rebuilt")
+        # 注意: compute_dataset_stats 计算的是未归一化的数据的μ/σ
+        # ASLPoseDataset 在内部进行了归一化，所以我们需要从dataset实例获取
+        print("✅ Retrieving μ/σ from training dataset...")
+        m_cfg.mean = torch.from_numpy(tr_loader.dataset.pose_mean).float()
+        m_cfg.std = torch.from_numpy(tr_loader.dataset.pose_std).float()
+    else:
+        print("✅ Using pre-defined μ/σ or no normalization.")
+
 
     # model & optim
-    model = TextToPoseDiffusion(m_cfg).to(device)
+    # ✨ CHANGED: 实例化新的 LatentDiffusion 模型
+    model = LatentDiffusion(m_cfg).to(device)
     optim_params = filter(lambda p: p.requires_grad, model.parameters())
     optimizer = optim.AdamW(optim_params, lr=t_cfg.learning_rate, weight_decay=1e-4)
     scheduler = build_scheduler(optimizer, t_cfg, len(tr_loader))
     scaler    = GradScaler(enabled=t_cfg.mixed_precision)
 
     # logging
+    # ... (logging 和 checkpoint 加载逻辑无需改动) ...
     os.makedirs(t_cfg.checkpoint_dir, exist_ok=True)
     os.makedirs(t_cfg.log_dir, exist_ok=True)
     writer   = SummaryWriter(t_cfg.log_dir)
@@ -162,6 +175,7 @@ def main():
     else:
         print("🆕  fresh run")
 
+    # ... (训练主循环无需改动) ...
     no_up, patience = 0, 30
     for ep in range(start_ep, t_cfg.num_epochs):
         t0 = time.time()
@@ -197,16 +211,16 @@ def main():
     # test
     best_path = os.path.join(t_cfg.checkpoint_dir, "best.pth")
     if os.path.exists(best_path):
+        print("✅  best model loaded for testing")
         ckpt = torch.load(best_path, map_location="cpu")
         model.load_state_dict(ckpt["model_state_dict"])
-        print("✅  best model loaded")
     test_loss = eval_epoch(model, test_loader, device)
     print(f"📊  test loss: {test_loss:.6f}")
 
     # demo generation
     model.eval(); print("\n🎨  sampling demo …")
     demo_texts = ["hello", "thank you", "water", "help", "good"]
-    poses = model.sample(demo_texts, T=50, num_steps=20)     # T 可任意
+    poses = model.sample(texts=demo_texts, T=60, num_steps=50) # T 可任意指定
     print(f"generated {poses.shape} | range[{poses.min():.2f},{poses.max():.2f}] "
           f"| mean {poses.mean():.2f} ± {poses.std():.2f}")
 

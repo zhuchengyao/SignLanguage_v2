@@ -11,14 +11,27 @@
 
 ## 🏗️ 系统架构
 
-```
-输入文本 → Text Encoder (BERT) → Diffusion Model → Pose Decoder → 输出Pose
-                                        ↓
-                            Foundation Model (单帧)
-                                        ↓
-                            + Temporal Attention Layers
-                                        ↓
-                            Temporal Model (序列)
+```mermaid
+graph TD
+    subgraph Stage1["第一阶段: GAT-Sequence VAE 训练"]
+        direction TB
+        A["真实动作序列<br/>Pose Sequence<br/>(T × 150)"] --> B["GAT 空间编码器<br/>Spatial Encoder<br/>图注意力网络"]
+        B --> C["GRU 时间编码器<br/>Temporal Encoder<br/>循环神经网络"]
+        C --> D["潜在表示<br/>Latent Space<br/>(低维特征)"]
+        D --> E["GRU 时间解码器<br/>Temporal Decoder<br/>循环神经网络"]
+        E --> F["MLP 空间解码器<br/>Spatial Decoder<br/>多层感知机"]
+        F --> G["重建动作序列<br/>Reconstructed Pose<br/>(T × 150)"]
+    end
+    
+    classDef inputOutput fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef encoder fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef latent fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef decoder fill:#e8f5e8,stroke:#2e7d32,stroke-width:2px
+    
+    class A,G inputOutput
+    class B,C encoder
+    class D latent
+    class E,F decoder
 ```
 
 ### 核心组件
@@ -195,6 +208,6 @@ num_epochs = 20
 
 ---
 
-**作者**: AI Assistant  
+**作者**: Chengyao Zhu
 **日期**: 2025年6月  
 **许可**: MIT License 

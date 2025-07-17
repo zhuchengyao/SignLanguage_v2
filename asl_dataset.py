@@ -157,7 +157,7 @@ class ASLPoseDataset(Dataset):
 # Convenience loader factory
 # ----------------------------------------------------------------------
 
-def create_data_loaders(config):
+def create_dataloaders(config):
     """构建 train / dev / test 的 DataLoader, 保证 μ/σ 一致"""
 
     # 1⃣  先加载 train, 自动归一化

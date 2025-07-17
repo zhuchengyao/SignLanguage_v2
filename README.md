@@ -93,8 +93,8 @@ python demo_complete_system.py
 
 ### 训练相关
 - `train_config.py` - 训练配置参数
-- `data_loader.py` - 单帧数据加载器
-- `temporal_data_loader.py` - 时序数据加载器
+- `dataloader.py` - 单帧数据加载器
+- `temporal_dataloader.py` - 时序数据加载器
 - `model.py` - Foundation模型定义
 - `temporal_model.py` - Temporal模型定义
 

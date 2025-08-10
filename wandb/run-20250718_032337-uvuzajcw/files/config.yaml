@@ -1,0 +1,136 @@
+_wandb:
+    value:
+        cli_version: 0.21.0
+        e:
+            61ljt7whxptjk8q3i9sejqqkd7dabswl:
+                args:
+                    - --wandb
+                codePath: 1_train_vqvae.py
+                codePathLocal: 1_train_vqvae.py
+                cpu_count: 12
+                cpu_count_logical: 20
+                cudaVersion: "12.8"
+                disk:
+                    /:
+                        total: "2000395694080"
+                        used: "1388336525312"
+                email: czhu@aum.edu
+                executable: C:\Users\22949\.conda\envs\huggingface\python.exe
+                git:
+                    commit: 08c8e457f1e4b31fa1286919f5cd55120a035f7d
+                    remote: git@github.com:zhuchengyao/SignLanguage_v2.git
+                gpu: NVIDIA GeForce RTX 4090
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Ada
+                      cudaCores: 16384
+                      memoryTotal: "25757220864"
+                      name: NVIDIA GeForce RTX 4090
+                      uuid: GPU-4e0963f0-62ad-c735-bafa-812e09192141
+                host: Noobility
+                memory:
+                    total: "68448337920"
+                os: Windows-10-10.0.26100-SP0
+                program: D:\Graduate thesis\eggroll_v2\1_train_vqvae.py
+                python: CPython 3.11.5
+                root: D:\Graduate thesis\eggroll_v2
+                startedAt: "2025-07-17T19:23:37.905694Z"
+                writerId: 61ljt7whxptjk8q3i9sejqqkd7dabswl
+        m: []
+        python_version: 3.11.5
+        t:
+            "1":
+                - 1
+            "2":
+                - 1
+            "3":
+                - 13
+                - 16
+            "4": 3.11.5
+            "5": 0.21.0
+            "8":
+                - 3
+            "12": 0.21.0
+            "13": windows-amd64
+batch_size:
+    value: 32
+codebook_size:
+    value: 1024
+commitment_cost:
+    value: 0.25
+data_root:
+    value: ./datasets
+device:
+    value: cuda
+downsample_rate:
+    value: 4
+ema_decay:
+    value: 0.99
+embedding_dim:
+    value: 256
+epsilon:
+    value: 1e-05
+gpt_checkpoint_path:
+    value: ./checkpoints/t2m_gpt_model.pth
+gpt_dropout:
+    value: 0.1
+gpt_heads:
+    value: 8
+gpt_hidden_dim:
+    value: 512
+gpt_layers:
+    value: 6
+gpt_learning_rate:
+    value: 0.0001
+gpt_num_epochs:
+    value: 50
+max_seq_len:
+    value: 120
+mean:
+    value: null
+motion_decoder_dropout:
+    value: 0.1
+motion_decoder_heads:
+    value: 8
+motion_decoder_hidden_dim:
+    value: 512
+motion_decoder_layers:
+    value: 4
+motion_encoder_dropout:
+    value: 0.1
+motion_encoder_heads:
+    value: 8
+motion_encoder_hidden_dim:
+    value: 512
+motion_encoder_layers:
+    value: 4
+pose_clip_range:
+    value:
+        - -2
+        - 2
+pose_dim:
+    value: 150
+pose_normalize:
+    value: true
+recon_loss_weight:
+    value: 1
+seed:
+    value: 42
+std:
+    value: null
+text_model_name:
+    value: bert-base-uncased
+use_ema_update:
+    value: true
+vq_loss_weight:
+    value: 0.25
+vq_sequence_length:
+    value: 30
+vq_weight_warmup_epochs:
+    value: 10
+vqvae_checkpoint_path:
+    value: ./checkpoints/vqvae_model.pth
+vqvae_learning_rate:
+    value: 0.0003
+vqvae_num_epochs:
+    value: 200

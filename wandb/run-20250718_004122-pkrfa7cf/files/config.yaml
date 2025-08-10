@@ -1,0 +1,153 @@
+_wandb:
+    value:
+        cli_version: 0.21.0
+        e:
+            ynb79hnu3t6vzstrms8j9k8b1mfhp3tp:
+                args:
+                    - --wandb
+                    - --wandb_project
+                    - vq-vae-optimized
+                codePath: train_vqvae.py
+                codePathLocal: train_vqvae.py
+                cpu_count: 12
+                cpu_count_logical: 20
+                cudaVersion: "12.8"
+                disk:
+                    /:
+                        total: "2000395694080"
+                        used: "1386819784704"
+                email: czhu@aum.edu
+                executable: C:\Users\22949\.conda\envs\huggingface\python.exe
+                git:
+                    commit: 08c8e457f1e4b31fa1286919f5cd55120a035f7d
+                    remote: git@github.com:zhuchengyao/SignLanguage_v2.git
+                gpu: NVIDIA GeForce RTX 4090
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Ada
+                      cudaCores: 16384
+                      memoryTotal: "25757220864"
+                      name: NVIDIA GeForce RTX 4090
+                      uuid: GPU-4e0963f0-62ad-c735-bafa-812e09192141
+                host: Noobility
+                memory:
+                    total: "68448337920"
+                os: Windows-10-10.0.26100-SP0
+                program: D:\Graduate thesis\eggroll_v2\train_vqvae.py
+                python: CPython 3.11.5
+                root: D:\Graduate thesis\eggroll_v2
+                startedAt: "2025-07-17T16:41:22.664502Z"
+                writerId: ynb79hnu3t6vzstrms8j9k8b1mfhp3tp
+        m: []
+        python_version: 3.11.5
+        t:
+            "1":
+                - 1
+            "2":
+                - 1
+                - 11
+                - 49
+            "3":
+                - 2
+                - 13
+                - 16
+            "4": 3.11.5
+            "5": 0.21.0
+            "8":
+                - 3
+            "12": 0.21.0
+            "13": windows-amd64
+batch_size:
+    value: 16
+codebook_size:
+    value: 512
+commitment_cost:
+    value: 1
+data_root:
+    value: ./datasets
+ema_decay:
+    value: 0.99
+embedding_dim:
+    value: 512
+epsilon:
+    value: 1e-05
+gpt_checkpoint_path:
+    value: ./checkpoints/t2m_gpt_best.pth
+gpt_embed_dim:
+    value: 768
+gpt_learning_rate:
+    value: 0.0001
+gpt_max_length:
+    value: 100
+gpt_model_name:
+    value: gpt2
+gpt_num_epochs:
+    value: 100
+learning_rate:
+    value: 0.0001
+max_seq_len:
+    value: 120
+max_text_len:
+    value: 64
+mean:
+    value: |-
+        [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.
+         0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.
+         0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.
+         0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.
+         0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.
+         0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.
+         0. 0. 0. 0. 0. 0.]
+motion_decoder_dropout:
+    value: 0.15
+motion_decoder_heads:
+    value: 8
+motion_decoder_hidden_dim:
+    value: 512
+motion_decoder_layers:
+    value: 8
+motion_encoder_dropout:
+    value: 0.15
+motion_encoder_heads:
+    value: 8
+motion_encoder_hidden_dim:
+    value: 512
+motion_encoder_layers:
+    value: 8
+motion_token_end_id:
+    value: 50258
+motion_token_start_id:
+    value: 50257
+num_epochs:
+    value: 200
+pad_token_id:
+    value: 50259
+pose_clip_range:
+    value: 8
+pose_dim:
+    value: 150
+pose_normalize:
+    value: true
+std:
+    value: |-
+        [1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1.
+         1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1.
+         1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1.
+         1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1.
+         1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1.
+         1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1.
+         1. 1. 1. 1. 1. 1.]
+text_embed_dim:
+    value: 768
+text_encoder_model:
+    value: bert-base-uncased
+use_ema_update:
+    value: true
+vq_sequence_length:
+    value: 30
+vqvae_checkpoint_path:
+    value: ./checkpoints/vqvae_best.pth
+vqvae_learning_rate:
+    value: 0.0002
+vqvae_num_epochs:
+    value: 300

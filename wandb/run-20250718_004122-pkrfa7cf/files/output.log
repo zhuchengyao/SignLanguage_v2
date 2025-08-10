@@ -1,0 +1,31 @@
+🤖 VQ-VAE 模型参数: 61,783,958
+📱 设备: cuda
+🔍 Scanning samples for split: train
+✅ train: found a total of 8246 valid samples.
+  ⚡ Loading cached stats for 'train' from ./datasets\ASL_gloss\.cache/train_stats.npz
+🔍 Scanning samples for split: dev
+✅ dev: found a total of 2550 valid samples.
+  Using external μ/σ for dev set.
+📊 训练样本: 8246, 验证样本: 2550
+📦 训练批次: 515, 验证批次: 160
+🚀 开始VQ-VAE训练，共300个epoch
+
+============================================================
+Epoch 1/300
+============================================================
+Epoch 1: 100%|████████████████████| 515/515 [00:44<00:00, 11.59it/s, Total=154.9697, Recon=154.9697, VQ=0.0000, VQw=0.20, LR=2.00e-04]
+Validation:   0%|                                                                                             | 0/160 [00:00<?, ?it/s]C:\Users\22949\.conda\envs\huggingface\Lib\site-packages\torch\nn\modules\transformer.py:380: UserWarning: The PyTorch API of nested tensors is in prototype stage and will change in the near future. (Triggered internally at ..\aten\src\ATen\NestedTensorImpl.cpp:180.)
+  output = torch._nested_tensor_from_mask(output, src_key_padding_mask.logical_not(), mask_check=False)
+Validation: 100%|███████████████████████████████████████████████████████████████████████████████████| 160/160 [00:14<00:00, 11.28it/s]
+
+📊 Epoch 1 结果:
+  训练损失: 159.1173 (重建: 159.1173, VQ: 0.0001)
+  验证损失: 155.0347 (重建: 152.1298, VQ: 2.9049)
+💾 保存最佳模型: ./checkpoints/vqvae_best.pth
+
+============================================================
+Epoch 2/300
+============================================================
+Epoch 2:  38%|███████▋            | 197/515 [00:22<00:36,  8.74it/s, Total=144.0270, Recon=144.0270, VQ=0.0000, VQw=0.40, LR=2.00e-04]
+
+⏹️ 训练被中断

@@ -1,0 +1,90 @@
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from typing import List, Tuple, Optional
+
+plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "DejaVu Sans"]
+plt.rcParams["axes.unicode_minus"] = False
+
+class ASLVisualizer:
+    def __init__(self):
+        self.setup_skeleton_connections()
+        self.colors = {
+            'body': {'point': '#FF6B6B', 'line': '#FF6B6B'},
+            'left_hand': {'point': '#4ECDC4', 'line': '#4ECDC4'},
+            'right_hand': {'point': '#45B7D1', 'line': '#45B7D1'},
+            'background': '#FFFFFF',
+            'grid': '#E5E5E5'
+        }
+        self.point_sizes = {'body': 50, 'left_hand': 25, 'right_hand': 25}
+        self.line_widths = {'body': 2.5, 'left_hand': 1.5, 'right_hand': 1.5}
+
+    def setup_skeleton_connections(self):
+        self.body_connections = [(0, 1), (1, 2), (1, 5), (2, 3), (3, 4), (5, 6), (6, 7)]
+        self.hand_connections = [
+            (0, 1), (1, 2), (2, 3), (3, 4), (0, 5), (5, 6), (6, 7), (7, 8),
+            (0, 9), (9, 10), (10, 11), (11, 12), (0, 13), (13, 14), (14, 15), (15, 16),
+            (0, 17), (17, 18), (18, 19), (19, 20)
+        ]
+
+    def parse_pose_150d(self, pose: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        if len(pose) != 150: raise ValueError(f"Expected 150-dim pose, got {len(pose)}")
+        body = pose[:24].reshape(-1, 3)
+        right_hand = pose[24:87].reshape(-1, 3)
+        left_hand = pose[87:150].reshape(-1, 3)
+        return body, right_hand, left_hand
+
+    def filter_valid_points(self, points: np.ndarray, threshold: float = 0.1) -> np.ndarray:
+        confidence = points[:, 2]
+        coords = points[:, :2]
+        valid = (confidence > threshold) & (np.abs(coords).sum(axis=1) > 1e-6)
+        return valid
+
+    def draw_skeleton_part(self, ax: plt.Axes, points: np.ndarray, connections: List[Tuple], color_config: dict, size: int, line_width: float):
+        valid_mask = self.filter_valid_points(points)
+        if not valid_mask.any(): return
+        coords = points[:, :2]
+        valid_coords = coords[valid_mask]
+        ax.scatter(valid_coords[:, 0], -valid_coords[:, 1], c=color_config['point'], s=size, alpha=0.8, edgecolors='white', linewidths=0.5, zorder=3)
+        for start_idx, end_idx in connections:
+            if start_idx < len(points) and end_idx < len(points) and valid_mask[start_idx] and valid_mask[end_idx]:
+                start_point, end_point = coords[start_idx], coords[end_idx]
+                ax.plot([start_point[0], end_point[0]], [-start_point[1], -end_point[1]], color=color_config['line'], linewidth=line_width, alpha=0.8, zorder=2)
+
+    def draw_pose(self, pose: np.ndarray, ax: Optional[plt.Axes] = None, title: str = ""):
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(8, 8))
+        body, right_hand, left_hand = self.parse_pose_150d(pose)
+        self.draw_skeleton_part(ax, body, self.body_connections, self.colors['body'], self.point_sizes['body'], self.line_widths['body'])
+        self.draw_skeleton_part(ax, right_hand, self.hand_connections, self.colors['right_hand'], self.point_sizes['right_hand'], self.line_widths['right_hand'])
+        self.draw_skeleton_part(ax, left_hand, self.hand_connections, self.colors['left_hand'], self.point_sizes['left_hand'], self.line_widths['left_hand'])
+        ax.set_aspect('equal')
+        ax.grid(True, alpha=0.3, color=self.colors['grid'])
+        if title:
+            ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+    def create_animation(self, pose_sequence: np.ndarray, output_path: str, title: str = "手语动画", fps: int = 15):
+        if len(pose_sequence) == 0: raise ValueError("Pose sequence is empty")
+        fig, ax = plt.subplots(figsize=(8, 8))
+        all_coords = np.concatenate([self.parse_pose_150d(p)[i][:, :2] for p in pose_sequence for i in range(3)])
+        valid_coords = all_coords[np.abs(all_coords).sum(axis=1) > 1e-6]
+        if len(valid_coords) > 0:
+            x_min, x_max = valid_coords[:, 0].min(), valid_coords[:, 0].max()
+            y_min, y_max = valid_coords[:, 1].min(), valid_coords[:, 1].max()
+            margin = max(x_max - x_min, y_max - y_min, 1.0) * 0.15
+        else:
+            x_min, x_max, y_min, y_max, margin = -1, 1, -1, 1, 0.2
+
+        def animate(frame_idx):
+            ax.clear()
+            ax.set_xlim(x_min - margin, x_max + margin)
+            ax.set_ylim(-(y_max + margin), -(y_min - margin))
+            self.draw_pose(pose_sequence[frame_idx], ax, title=f"{title}\nFrame {frame_idx + 1}/{len(pose_sequence)}")
+        
+        anim = animation.FuncAnimation(fig, animate, frames=len(pose_sequence), interval=1000/fps, blit=False)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        anim.save(output_path, writer='pillow', fps=fps)
+        plt.close(fig)

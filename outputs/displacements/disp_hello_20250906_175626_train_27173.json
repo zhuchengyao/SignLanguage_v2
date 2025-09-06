@@ -1,0 +1,18 @@
+{
+  "word": "hello",
+  "split": "train",
+  "sid": "27173",
+  "sample_dir": "./datasets\\ASL_gloss\\train\\27173",
+  "input_frames": 12,
+  "disp_shape": [
+    11,
+    50,
+    2
+  ],
+  "include_delta_conf": false,
+  "p0_path": "outputs/displacements\\disp_hello_20250906_175626_train_27173_p0.npy",
+  "p0_shape": [
+    50,
+    2
+  ]
+}

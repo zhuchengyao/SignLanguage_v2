@@ -38,9 +38,9 @@ class BucketSampler(Sampler):
         return len(item[1]) if item is not None and item[1] is not None else 0
     def _prepare_buckets(self):
         if os.path.exists(self.cache_path):
-            print(f"✅ Loading sampler buckets from cache: {self.cache_path}")
+            print(f"Loading sampler buckets from cache: {self.cache_path}")
             return torch.load(self.cache_path)
-        print("🪣 Preparing buckets for sampling (first run)...")
+        print("Preparing buckets for sampling (first run)...")
         lengths = [self._get_seq_length(i) for i in tqdm(range(len(self.dataset)), desc="Fetching lengths")]
         buckets = [[] for _ in range(len(self.boundaries) + 1)]
         for i, length in enumerate(lengths):
@@ -51,7 +51,7 @@ class BucketSampler(Sampler):
                 bucket_idx += 1
             buckets[bucket_idx].append(i)
         buckets = [b for b in buckets if b]
-        print(f"✅ Buckets prepared. Found {len(buckets)} non-empty buckets. Caching...")
+        print(f"Buckets prepared. Found {len(buckets)} non-empty buckets. Caching...")
         torch.save(buckets, self.cache_path)
         return buckets
     def __iter__(self):
@@ -70,7 +70,7 @@ class BucketSampler(Sampler):
 
 
 class ASLPoseDataset(Dataset):
-    def __init__(self, data_paths: Union[str, List[str]], split: str, pose_normalize: bool = True, pose_clip_range: tuple = (-2.0, 2.0), max_seq_len: Optional[int] = None, extern_mean: Optional[np.ndarray] = None, extern_std: Optional[np.ndarray] = None):
+    def __init__(self, data_paths: Union[str, List[str]], split: str, pose_normalize: bool = True, pose_clip_range: tuple = (-2.0, 2.0), max_seq_len: Optional[int] = None, extern_mean: Optional[np.ndarray] = None, extern_std: Optional[np.ndarray] = None, cache_in_memory: bool = True, cache_max_items: int = 1024):
         super().__init__()
         self.data_paths = data_paths if isinstance(data_paths, list) else [data_paths]
         self.split = split
@@ -97,35 +97,41 @@ class ASLPoseDataset(Dataset):
                 self.pose_mean, self.pose_std = extern_mean, extern_std
             elif self.sample_paths:
                 if os.path.exists(stats_cache_path):
-                    print(f"  ⚡ Loading cached stats for '{self.split}' from {stats_cache_path}")
+                    print(f"Loading cached stats for '{self.split}' from {stats_cache_path}")
                     stats = np.load(stats_cache_path)
                     self.pose_mean, self.pose_std = stats['mean'], stats['std']
                 else:
-                    print(f"  Computing μ/σ for {self.split} set...")
+                    print(f"Computing mean/std for {self.split} set...")
                     self._compute_stats()
                     np.savez(stats_cache_path, mean=self.pose_mean, std=self.pose_std)
-                    print(f"   -> Stats cached to {stats_cache_path}")
+                    print(f"Stats cached to {stats_cache_path}")
 
             # --- FIX: Create tensor versions here ---
             self.mean_tensor = torch.from_numpy(self.pose_mean)
             self.std_tensor = torch.from_numpy(self.pose_std)
 
+        # --- simple LRU-ish cache ---
+        self.cache_in_memory = cache_in_memory
+        self.cache_max_items = cache_max_items
+        self._cache: dict[int, Tuple[str, torch.Tensor]] = {}
+        self._cache_order: List[int] = []
+
     # ... _scan_and_build_paths and _compute_stats methods remain the same ...
     def _scan_and_build_paths(self):
-        print(f"🔍 Scanning samples for split: {self.split}")
+        print(f"Scanning samples for split: {self.split}")
         for data_root in self.data_paths:
             if not os.path.isdir(data_root):
-                print(f"  ⚠️ Path not found, skipping: {data_root}")
+                print(f"Path not found, skipping: {data_root}")
                 continue
             for sid in sorted(os.listdir(data_root)):
                 base = os.path.join(data_root, sid)
                 txt_f, pose_f = os.path.join(base, "text.txt"), os.path.join(base, "pose.json")
                 if os.path.exists(txt_f) and os.path.exists(pose_f):
                     self.sample_paths.append((txt_f, pose_f))
-        print(f"✅ {self.split}: found a total of {len(self.sample_paths)} valid samples.")
+        print(f"{self.split}: found a total of {len(self.sample_paths)} valid samples.")
     def _compute_stats(self):
         all_frames = []
-        for _, pose_path in tqdm(self.sample_paths, desc="  Computing stats"):
+        for _, pose_path in tqdm(self.sample_paths, desc="Computing stats"):
             try:
                 with open(pose_path, "r", encoding="utf-8") as f: js = json.load(f)
                 frames = js.get("poses", [])
@@ -135,19 +141,23 @@ class ASLPoseDataset(Dataset):
                 if seq_valid: all_frames.append(np.array(seq_valid, dtype=np.float32))
             except Exception: continue
         if not all_frames:
-            print("  ⚠️ No valid frames found to compute stats...")
+            print("No valid frames found to compute stats...")
             return
         all_frames_np = np.concatenate(all_frames, axis=0)
         self.pose_mean = all_frames_np.mean(axis=0)
         self.pose_std = all_frames_np.std(axis=0)
         self.pose_std[self.pose_std < 1e-8] = 1e-8
         m, s = self.pose_mean.mean(), self.pose_std.mean()
-        print(f"  Stats computed: μ≈{m:.3f}, σ≈{s:.3f}")
+        print(f"Stats computed: mean~{m:.3f}, std~{s:.3f}")
 
     def __len__(self) -> int:
         return len(self.sample_paths)
 
     def __getitem__(self, idx: int) -> Optional[Tuple[str, torch.Tensor]]:
+        # Memory cache
+        if self.cache_in_memory and idx in self._cache:
+            return self._cache[idx]
+
         text_path, pose_path = self.sample_paths[idx]
         try:
             with open(text_path, 'r', encoding='utf-8') as f: text = f.read().strip()
@@ -165,6 +175,15 @@ class ASLPoseDataset(Dataset):
                 # No new tensors are created here, just using existing ones.
                 pose_tensor = (pose_tensor - self.mean_tensor) / self.std_tensor
                 pose_tensor = torch.clip(pose_tensor, self.pose_clip_range[0], self.pose_clip_range[1])
-            return text, pose_tensor
+            item = (text, pose_tensor)
+
+            if self.cache_in_memory:
+                self._cache[idx] = item
+                self._cache_order.append(idx)
+                if len(self._cache_order) > self.cache_max_items:
+                    old = self._cache_order.pop(0)
+                    self._cache.pop(old, None)
+
+            return item
         except Exception:
             return None

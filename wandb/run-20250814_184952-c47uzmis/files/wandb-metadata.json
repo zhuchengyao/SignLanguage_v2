@@ -1,0 +1,45 @@
+{
+  "os": "Windows-11-10.0.26100-SP0",
+  "python": "CPython 3.12.6",
+  "startedAt": "2025-08-14T10:49:52.195399Z",
+  "args": [
+    "--wandb"
+  ],
+  "program": "D:\\Graduate thesis\\eggroll_v2\\2_train_gpt.py",
+  "codePath": "2_train_gpt.py",
+  "git": {
+    "remote": "git@github.com:zhuchengyao/SignLanguage_v2.git",
+    "commit": "b55fc7d1c965ab0d853a552b8b2b0e7b7cb9ffd6"
+  },
+  "email": "czhu@aum.edu",
+  "root": "D:\\Graduate thesis\\eggroll_v2",
+  "host": "Noobility",
+  "executable": "C:\\Python312\\python.exe",
+  "codePathLocal": "2_train_gpt.py",
+  "cpu_count": 12,
+  "cpu_count_logical": 20,
+  "gpu": "NVIDIA GeForce RTX 4090",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "2000395694080",
+      "used": "1396806475776"
+    }
+  },
+  "memory": {
+    "total": "68448337920"
+  },
+  "cpu": {
+    "count": 12,
+    "countLogical": 20
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA GeForce RTX 4090",
+      "memoryTotal": "25757220864",
+      "cudaCores": 16384,
+      "architecture": "Ada"
+    }
+  ],
+  "cudaVersion": "12.8"
+}

@@ -1,213 +1,155 @@
-# Text-to-Pose 手语生成系统
+# Text-to-Pose 手语生成系统（VQ‑VAE + GPT）
 
-基于AnimateDiff训练方式的扩散模型手语生成系统，能够从自然语言文本生成对应的手语pose序列。
+从自然语言文本生成对应的 2D 手语 pose 序列。系统采用两阶段范式：首先用 VQ‑VAE 将连续姿态序列离散化为“动作码”，再用文本条件的自回归 GPT 生成这些码，最后解码为完整的姿态序列并可视化为 GIF。
 
 ## 📋 项目概述
 
-本项目实现了一个完整的text-to-pose训练流程，采用类似AnimateDiff的两阶段训练方式：
+两阶段训练流程：
 
-1. **Foundation Model**: 训练text-to-pose基础模型（单帧）
-2. **Temporal Model**: 基于foundation model添加时序处理能力（多帧序列）
+1. **VQ‑VAE**：学习 pose 序列的时空表示，并量化为离散码（codebook token）；可将离散码解码回 pose 序列。
+2. **T2M‑GPT**：冻结文本编码器（BERT），自回归生成离散动作码（含 SOS/EOS），实现文本到动作序列的生成。
 
 ## 🏗️ 系统架构
 
 ```mermaid
 graph TD
-    subgraph Stage1["第一阶段: GAT-Sequence VAE 训练"]
+    subgraph Stage1["阶段一：VQ‑VAE（Pose ↔ Token）"]
         direction TB
-        A["真实动作序列<br/>Pose Sequence<br/>(T × 150)"] --> B["GAT 空间编码器<br/>Spatial Encoder<br/>图注意力网络"]
-        B --> C["GRU 时间编码器<br/>Temporal Encoder<br/>循环神经网络"]
-        C --> D["潜在表示<br/>Latent Space<br/>(低维特征)"]
-        D --> E["GRU 时间解码器<br/>Temporal Decoder<br/>循环神经网络"]
-        E --> F["MLP 空间解码器<br/>Spatial Decoder<br/>多层感知机"]
-        F --> G["重建动作序列<br/>Reconstructed Pose<br/>(T × 150)"]
+        A["Pose 序列 (T × 150)"] --> B["Motion Encoder\n(Transformer) ↓rate=4"]
+        B --> C["Vector Quantizer\n(codebook_size=2048)"]
+        C --> D["Motion Decoder\n(Transformer)"]
+        D --> E["重建 Pose 序列 (T × 150)"]
     end
-    
-    classDef inputOutput fill:#e1f5fe,stroke:#01579b,stroke-width:2px
-    classDef encoder fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
-    classDef latent fill:#fff3e0,stroke:#e65100,stroke-width:2px
-    classDef decoder fill:#e8f5e8,stroke:#2e7d32,stroke-width:2px
-    
-    class A,G inputOutput
-    class B,C encoder
-    class D latent
-    class E,F decoder
+
+    subgraph Stage2["阶段二：T2M‑GPT（Text → Token）"]
+        direction TB
+        T["文本"] --> X["BERT (frozen)"]
+        X --> Y["Transformer Decoder (GPT)"]
+        Y --> Z["离散动作码 (含SOS/EOS)"]
+    end
+
+    Z -->|Decode| E
 ```
 
 ### 核心组件
 
-- **Text Encoder**: 基于BERT的文本编码器
-- **Pose Embedder**: 将150维pose数据嵌入到隐空间
-- **Diffusion Scheduler**: 扩散过程的噪声调度
-- **Noise Predictor**: 预测噪声的神经网络
-- **Temporal Attention**: 处理时序信息的注意力机制
-- **Pose Decoder**: 将隐向量解码为pose数据
+- **Text Encoder**：BERT（冻结参数）
+- **Motion Encoder/Decoder**：Transformer 编解码器 + 下采样/上采样
+- **Vector Quantizer**：向量量化器（支持 EMA 更新）
+- **Kinematic Decoder（可选）**：基于 2D 骨骼前向运动学的几何一致性解码
+- **Sign‑aware Loss**：手部更高权重、骨长一致性与时序平滑正则
 
 ## 📊 数据格式
 
-### Pose数据结构 (150维)
-- **身体关键点**: 8个点 × 3 (x,y,confidence) = 24维
-- **左手关键点**: 21个点 × 3 = 63维  
-- **右手关键点**: 21个点 × 3 = 63维
-- **面部关键点**: 暂未使用 (设为0)
+### Pose 数据结构（150 维）
+- **身体关键点**：8 个点 × 3 (x, y, confidence) = 24 维
+- **右手关键点**：21 个点 × 3 = 63 维
+- **左手关键点**：21 个点 × 3 = 63 维
+- **面部关键点**：暂未使用（设为 0）
 
-### 数据集结构
+### 数据集目录
 ```
 datasets/ASL_gloss/
-├── train/          # 训练数据
-├── dev/            # 验证数据  
-├── test/           # 测试数据
-├── ASL_train_index.json
-├── ASL_dev_index.json
-└── ASL_test_index.json
+├── train/                # 训练数据
+├── dev/                  # 验证数据
+├── test/                 # 测试数据
+└── <split>/<sid>/{text.txt, pose.json}
 ```
+
+其中 `text.txt` 为文本，`pose.json` 为帧序列，每帧拼接为 150 维（与上面顺序一致）。首次运行会在 `.cache/` 下缓存统计量与采样桶信息。
 
 ## 🚀 快速开始
 
-### 1. 环境准备
+### 1. 安装依赖
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. 生成演示数据集
-```bash
-python create_demo_data.py
-```
+### 2. 准备数据
+- 在 `src/config.py` 中确认 `self.data_root = "./datasets"`。
+- 保证目录结构与文件命名符合“数据集目录”一节。
 
-### 3. 训练Foundation Model
+### 3. 训练 VQ‑VAE（阶段一）
 ```bash
-python train_foundation.py
+python 1_train_vqvae.py --wandb --session_epochs 3
 ```
+- 支持断点续训，权重保存至 `./checkpoints/vqvae_model_latest.pth` 与 `./checkpoints/vqvae_model.pth`（best）。
 
-### 4. 训练Temporal Model  
+### 4. 训练 T2M‑GPT（阶段二）
 ```bash
-python train_temporal.py
+python 2_train_gpt.py --wandb
 ```
+- 依赖 `./checkpoints/vqvae_model.pth`。
 
-### 5. 运行完整演示
+### 5. 文本到姿态推理与可视化
 ```bash
-python demo_complete_system.py
+python 3_inference.py \
+  --vqvae_checkpoint ./checkpoints/vqvae_model.pth \
+  --gpt_checkpoint   ./checkpoints/t2m_gpt_model.pth \
+  --text "apple" \
+  --output_dir ./outputs
 ```
+输出 GIF 位于 `outputs/`。
 
 ## 📁 文件说明
 
-### 训练相关
-- `train_config.py` - 训练配置参数
-- `dataloader.py` - 单帧数据加载器
-- `temporal_dataloader.py` - 时序数据加载器
-- `model.py` - Foundation模型定义
-- `temporal_model.py` - Temporal模型定义
+- `src/config.py`：统一配置（模型规模、训练超参、数据根目录等）
+- `src/dataloader.py`：数据加载、统计缓存、分桶采样 `BucketSampler`
+- `src/model_vqvae.py`：VQ‑VAE（Transformer 编/解码 + 向量量化 + 可选运动学解码与 sign‑aware 损失）
+- `src/model_gpt.py`：文本条件 GPT（冻结 BERT + Transformer Decoder，自回归生成动作码）
+- `1_train_vqvae.py`：VQ‑VAE 训练脚本（Session 化、自动断点续训、W&B 可选）
+- `2_train_gpt.py`：T2M‑GPT 训练脚本（验证与 best/last 权重保存）
+- `3_inference.py`：推理与可视化（按 `downsample_rate` 还原帧长）
+- `src/asl_visualizer.py`：将姿态序列渲染为 GIF（调色与布局可自定义）
 
-### 训练脚本
-- `train_foundation.py` - Foundation模型训练
-- `train_temporal.py` - Temporal模型训练
-- `test_foundation.py` - Foundation模型测试
-- `demo_complete_system.py` - 完整系统演示
+## 🎯 训练细节与特性
 
-### 数据准备
-- `create_demo_data.py` - 创建演示数据集
+- **Codebook**：`codebook_size=2048`，`embedding_dim=384`
+- **时间下采样率**：`downsample_rate=4`（token ↔ 帧数之间的映射）
+- **Sign‑aware 重建**：手部更高权重、置信度加权、骨长一致性与速度/加速度平滑
+- **Windows 友好**：默认 `num_workers=0`, `pin_memory=False` 以避免内存抖动
 
-## 🎯 训练流程
-
-### 阶段1: Foundation Model训练
+## 🔧 关键配置（节选）
 
 ```python
-# 单帧pose生成
-输入: "hello" (文本)
-输出: [150维pose向量] (单帧)
-
-训练目标: 学习text → pose的映射关系
-```
-
-### 阶段2: Temporal Model训练
-
-```python
-# pose序列生成  
-输入: "hello" (文本)
-输出: [seq_len, 150] (多帧序列)
-
-训练策略:
-- 冻结Foundation Model权重
-- 只训练新增的Temporal Layers
-- 保持foundation能力的同时添加时序建模
-```
-
-## 📈 模型性能
-
-### Foundation Model
-- **总参数**: 114,216,598
-- **可训练参数**: 4,734,358  
-- **功能**: 单帧pose生成
-
-### Temporal Model  
-- **总参数**: 117,908,630
-- **新增参数**: 3,692,032
-- **功能**: 连续pose序列生成
-
-## 🎨 技术特点
-
-1. **扩散模型**: 保证生成质量和多样性
-2. **分阶段训练**: 提高训练效率，类似AnimateDiff
-3. **时序建模**: 保证动作的时序连贯性
-4. **可扩展性**: 易于扩展到更多词汇和动作
-
-## 🔧 关键参数
-
-```python
-# 模型配置
-pose_dim = 150          # pose维度
-text_embed_dim = 512    # 文本嵌入维度
-pose_embed_dim = 256    # pose嵌入维度
-hidden_dim = 1024       # 隐层维度
-
-# 扩散配置
-num_diffusion_steps = 1000
-beta_start = 0.0001
-beta_end = 0.02
-
-# 训练配置
-batch_size = 8
-learning_rate = 1e-4
-num_epochs = 20
+# src/config.py（节选）
+pose_dim = 150
+codebook_size = 2048
+downsample_rate = 4
+vqvae_num_epochs = 120
+gpt_num_epochs = 50
+text_model_name = "bert-base-uncased"
+use_kinematic_decoder = True
 ```
 
 ## 📱 应用场景
 
-- **手语翻译**: 文本转手语动作
-- **虚拟人生成**: 驱动虚拟角色做手语
-- **辅助交流**: 帮助聋哑人士交流
-- **教育培训**: 手语教学和学习
+- **手语翻译**：文本转手语动作
+- **虚拟数字人**：驱动角色进行手语表达
+- **辅助交流**：为听障人群提供更直观的沟通方式
+- **教育培训**：手语教学与练习评估
 
 ## 🔬 扩展方向
 
-1. **更大数据集**: 使用真实ASL数据集
-2. **更多词汇**: 扩展词汇表和句子级生成
-3. **质量提升**: 优化模型架构和训练策略
-4. **实时生成**: 优化推理速度
-5. **多模态**: 结合音频、视频等信息
+1. 更大规模数据与更丰富词汇/句子级生成
+2. 运动学与物理先验的更强约束
+3. 更优自回归采样（如温度、top‑k、top‑p 动态调度）
+4. 3D 骨架与多模态（音频/视频）联合建模
 
-## 📜 技术原理
+## ⚠️ 注意事项
 
-### 扩散模型
-采用DDPM (Denoising Diffusion Probabilistic Models)框架：
-- **前向过程**: 逐步添加噪声直到变成纯噪声
-- **反向过程**: 学习从噪声中恢复数据
-- **条件生成**: 基于文本条件生成特定pose
-
-### AnimateDiff启发
-- **Foundation先训练**: 建立基础的text-pose映射
-- **Temporal后训练**: 在冻结foundation的基础上添加时序能力
-- **参数高效**: 避免从头训练大型时序模型
+- 首次运行会自动下载 `bert-base-uncased`（需联网或已有本地缓存）。
+- `pose.json` 每帧必须是 150 维拼接，缺帧会使样本跳过。
+- `.cache/` 下会缓存统计量与长度分桶以加速训练。
 
 ## 🤝 致谢
 
-本项目受到以下工作的启发：
-- AnimateDiff: 视频生成的时序扩散模型
-- Stable Diffusion: 文本到图像的扩散模型
-- OpenPose: 人体姿态估计
+- OpenPose / MediaPipe（姿态与手部关键点范式）
+- VQ‑VAE / Vector Quantization 系列工作
+- Transformer / GPT 系列工作
 
 ---
 
-**作者**: Chengyao Zhu
+**作者**: Chengyao Zhu  
 **日期**: 2025年6月  
-**许可**: MIT License 
+**许可**: MIT License

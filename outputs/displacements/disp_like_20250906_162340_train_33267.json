@@ -1,0 +1,13 @@
+{
+  "word": "like",
+  "split": "train",
+  "sid": "33267",
+  "sample_dir": "./datasets\\ASL_gloss\\train\\33267",
+  "input_frames": 39,
+  "disp_shape": [
+    38,
+    50,
+    2
+  ],
+  "include_delta_conf": false
+}

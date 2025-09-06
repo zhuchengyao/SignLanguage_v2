@@ -1,0 +1,13 @@
+{
+  "word": "drink",
+  "split": "train",
+  "sid": "17709",
+  "sample_dir": "./datasets\\ASL_gloss\\train\\17709",
+  "input_frames": 35,
+  "disp_shape": [
+    34,
+    50,
+    2
+  ],
+  "include_delta_conf": false
+}

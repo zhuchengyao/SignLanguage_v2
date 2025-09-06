@@ -21,8 +21,13 @@ class T2M_GPT(nn.Module):
         bert_hidden_size = self.text_encoder.config.hidden_size # This is 768
         self.text_feature_projection = nn.Linear(bert_hidden_size, cfg.gpt_hidden_dim)
 
-        # 2. Motion Token Embedding
-        self.motion_embedding = nn.Embedding(cfg.codebook_size + 1, cfg.gpt_hidden_dim)
+        # 2. Motion Token Embedding (+SOS/+EOS)
+        vocab_size = cfg.codebook_size + 1  # +1 for SOS at least
+        if getattr(cfg, 'use_eos_token', True):
+            vocab_size += 1  # EOS
+        self.sos_id = cfg.codebook_size
+        self.eos_id = cfg.codebook_size + 1 if getattr(cfg, 'use_eos_token', True) else None
+        self.motion_embedding = nn.Embedding(vocab_size, cfg.gpt_hidden_dim)
         
         # 3. Positional Encoding
         self.pos_encoding = PositionalEncoding(cfg.gpt_hidden_dim, cfg.model_max_seq_len)
@@ -36,7 +41,7 @@ class T2M_GPT(nn.Module):
         self.transformer_decoder = nn.TransformerDecoder(decoder_layer, num_layers=cfg.gpt_layers)
         
         # 5. Output Head
-        self.output_head = nn.Linear(cfg.gpt_hidden_dim, cfg.codebook_size)
+        self.output_head = nn.Linear(cfg.gpt_hidden_dim, self.motion_embedding.num_embeddings)
         
     def forward(self, tokenized_text, motion_tokens: torch.Tensor, motion_mask: torch.Tensor = None):
         # 1. Get text features from BERT (Dimension: 768)

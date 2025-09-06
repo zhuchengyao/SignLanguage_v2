@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "word": "hello",
+      "base": "template_hello_20250906_172124_T64"
+    },
+    {
+      "word": "apple",
+      "base": "template_apple_20250906_172124_T64"
+    }
+  ]
+}

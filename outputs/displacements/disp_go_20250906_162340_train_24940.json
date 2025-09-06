@@ -1,0 +1,13 @@
+{
+  "word": "go",
+  "split": "train",
+  "sid": "24940",
+  "sample_dir": "./datasets\\ASL_gloss\\train\\24940",
+  "input_frames": 25,
+  "disp_shape": [
+    24,
+    50,
+    2
+  ],
+  "include_delta_conf": false
+}

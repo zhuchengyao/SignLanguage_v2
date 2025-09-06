@@ -1,0 +1,13 @@
+{
+  "word": "yes",
+  "split": "train",
+  "sid": "64280",
+  "sample_dir": "./datasets\\ASL_gloss\\train\\64280",
+  "input_frames": 23,
+  "disp_shape": [
+    22,
+    50,
+    2
+  ],
+  "include_delta_conf": false
+}

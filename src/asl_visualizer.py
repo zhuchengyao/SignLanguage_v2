@@ -8,8 +8,10 @@ plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False
 
 class ASLVisualizer:
-    def __init__(self):
+    def __init__(self, invert_y: bool = True, invert_x: bool = False):
         self.setup_skeleton_connections()
+        self.invert_y = invert_y
+        self.invert_x = invert_x
         self.colors = {
             'body': {'point': '#FF6B6B', 'line': '#FF6B6B'},
             'left_hand': {'point': '#4ECDC4', 'line': '#4ECDC4'},
@@ -35,10 +37,10 @@ class ASLVisualizer:
         left_hand = pose[87:150].reshape(-1, 3)
         return body, right_hand, left_hand
 
-    def filter_valid_points(self, points: np.ndarray, threshold: float = 0.1) -> np.ndarray:
+    def filter_valid_points(self, points: np.ndarray, threshold: float = 0.0) -> np.ndarray:
         confidence = points[:, 2]
-        coords = points[:, :2]
-        valid = (confidence > threshold) & (np.abs(coords).sum(axis=1) > 1e-6)
+        # 仅基于置信度过滤，避免因坐标接近0而被整体判无效
+        valid = (confidence > threshold)
         return valid
 
     def draw_skeleton_part(self, ax: plt.Axes, points: np.ndarray, connections: List[Tuple], color_config: dict, size: int, line_width: float):
@@ -46,11 +48,13 @@ class ASLVisualizer:
         if not valid_mask.any(): return
         coords = points[:, :2]
         valid_coords = coords[valid_mask]
-        ax.scatter(valid_coords[:, 0], -valid_coords[:, 1], c=color_config['point'], s=size, alpha=0.8, edgecolors='white', linewidths=0.5, zorder=3)
+        sx = -1.0 if self.invert_x else 1.0
+        sy = -1.0 if self.invert_y else 1.0
+        ax.scatter(sx * valid_coords[:, 0], sy * valid_coords[:, 1], c=color_config['point'], s=size, alpha=0.8, edgecolors='white', linewidths=0.5, zorder=3)
         for start_idx, end_idx in connections:
             if start_idx < len(points) and end_idx < len(points) and valid_mask[start_idx] and valid_mask[end_idx]:
                 start_point, end_point = coords[start_idx], coords[end_idx]
-                ax.plot([start_point[0], end_point[0]], [-start_point[1], -end_point[1]], color=color_config['line'], linewidth=line_width, alpha=0.8, zorder=2)
+                ax.plot([sx * start_point[0], sx * end_point[0]], [sy * start_point[1], sy * end_point[1]], color=color_config['line'], linewidth=line_width, alpha=0.8, zorder=2)
 
     def draw_pose(self, pose: np.ndarray, ax: Optional[plt.Axes] = None, title: str = ""):
         if ax is None:
@@ -70,18 +74,23 @@ class ASLVisualizer:
         if len(pose_sequence) == 0: raise ValueError("Pose sequence is empty")
         fig, ax = plt.subplots(figsize=(8, 8))
         all_coords = np.concatenate([self.parse_pose_150d(p)[i][:, :2] for p in pose_sequence for i in range(3)])
-        valid_coords = all_coords[np.abs(all_coords).sum(axis=1) > 1e-6]
-        if len(valid_coords) > 0:
-            x_min, x_max = valid_coords[:, 0].min(), valid_coords[:, 0].max()
-            y_min, y_max = valid_coords[:, 1].min(), valid_coords[:, 1].max()
-            margin = max(x_max - x_min, y_max - y_min, 1.0) * 0.15
-        else:
-            x_min, x_max, y_min, y_max, margin = -1, 1, -1, 1, 0.2
+        # 放宽可视窗范围，避免坐标过小导致看似空白
+        x_min, x_max = np.nanmin(all_coords[:, 0]), np.nanmax(all_coords[:, 0])
+        y_min, y_max = np.nanmin(all_coords[:, 1]), np.nanmax(all_coords[:, 1])
+        if not np.isfinite([x_min, x_max, y_min, y_max]).all():
+            x_min, x_max, y_min, y_max = -1, 1, -1, 1
+        if x_max - x_min < 1e-6 and y_max - y_min < 1e-6:
+            # 全部几乎重合，给一个默认范围
+            x_min, x_max, y_min, y_max = -1, 1, -1, 1
+        margin = max(x_max - x_min, y_max - y_min, 1.0) * 0.2
 
         def animate(frame_idx):
             ax.clear()
             ax.set_xlim(x_min - margin, x_max + margin)
-            ax.set_ylim(-(y_max + margin), -(y_min - margin))
+            if self.invert_y:
+                ax.set_ylim(-(y_max + margin), -(y_min - margin))
+            else:
+                ax.set_ylim((y_min - margin), (y_max + margin))
             self.draw_pose(pose_sequence[frame_idx], ax, title=f"{title}\nFrame {frame_idx + 1}/{len(pose_sequence)}")
         
         anim = animation.FuncAnimation(fig, animate, frames=len(pose_sequence), interval=1000/fps, blit=False)

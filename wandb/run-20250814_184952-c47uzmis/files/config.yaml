@@ -1,0 +1,155 @@
+_wandb:
+    value:
+        cli_version: 0.19.11
+        m: []
+        python_version: 3.12.6
+        t:
+            "1":
+                - 1
+                - 2
+                - 3
+                - 5
+                - 11
+                - 12
+                - 41
+                - 49
+                - 53
+                - 55
+                - 71
+                - 105
+            "2":
+                - 1
+                - 2
+                - 3
+                - 5
+                - 11
+                - 12
+                - 41
+                - 49
+                - 53
+                - 55
+                - 71
+                - 105
+            "3":
+                - 13
+                - 16
+                - 23
+                - 55
+            "4": 3.12.6
+            "5": 0.19.11
+            "6": 4.52.4
+            "8":
+                - 3
+                - 5
+            "12": 0.19.11
+            "13": windows-amd64
+batch_size:
+    value: 32
+body_point_weight:
+    value: 1
+bone_length_loss_weight:
+    value: 0.1
+codebook_size:
+    value: 1024
+commitment_cost:
+    value: 0.25
+conf_weight_gamma:
+    value: 1
+data_root:
+    value: ./datasets
+dataset_cache_in_memory:
+    value: true
+dataset_cache_max_items:
+    value: 1024
+device:
+    value: cuda
+downsample_rate:
+    value: 4
+ema_decay:
+    value: 0.99
+embedding_dim:
+    value: 256
+epsilon:
+    value: 1e-05
+gpt_checkpoint_path:
+    value: ./checkpoints/t2m_gpt_model.pth
+gpt_dropout:
+    value: 0.1
+gpt_heads:
+    value: 8
+gpt_hidden_dim:
+    value: 512
+gpt_layers:
+    value: 6
+gpt_learning_rate:
+    value: 0.0001
+gpt_num_epochs:
+    value: 100
+hand_point_weight:
+    value: 2
+model_max_seq_len:
+    value: 500
+motion_decoder_dropout:
+    value: 0.1
+motion_decoder_heads:
+    value: 8
+motion_decoder_hidden_dim:
+    value: 512
+motion_decoder_layers:
+    value: 4
+motion_encoder_dropout:
+    value: 0.1
+motion_encoder_heads:
+    value: 8
+motion_encoder_hidden_dim:
+    value: 512
+motion_encoder_layers:
+    value: 4
+num_joints_2d:
+    value: 50
+num_workers:
+    value: 0
+persistent_workers:
+    value: false
+pin_memory:
+    value: false
+pose_dim:
+    value: 150
+prefetch_factor:
+    value: 2
+recon_loss_weight:
+    value: 1
+seed:
+    value: 42
+temporal_accel_loss_weight:
+    value: 0
+temporal_velocity_loss_weight:
+    value: 0.05
+text_model_name:
+    value: bert-base-uncased
+use_confidence_weight:
+    value: true
+use_ema_update:
+    value: true
+use_eos_token:
+    value: true
+use_kinematic_decoder:
+    value: true
+val_batch_size:
+    value: 16
+vq_lookup_code_chunk:
+    value: 4096
+vq_lookup_token_chunk:
+    value: 4096
+vq_loss_weight:
+    value: 0.25
+vq_sequence_length:
+    value: 125
+vq_weight_warmup_epochs:
+    value: 10
+vqvae_checkpoint_path:
+    value: ./checkpoints/vqvae_model.pth
+vqvae_learning_rate:
+    value: 0.0003
+vqvae_num_epochs:
+    value: 205

@@ -16,32 +16,33 @@ class T2M_Inference:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
             self.device = torch.device(device)
-        print(f"📱 Using device: {self.device}")
+        print(f"Using device: {self.device}")
 
         # --- Load Config from checkpoint ---
-        print(f"📥 Loading config from VQ-VAE checkpoint: {vqvae_path}")
+        print(f"Loading config from VQ-VAE checkpoint: {vqvae_path}")
         vqvae_checkpoint = torch.load(vqvae_path, map_location="cpu", weights_only=False)
         self.cfg = vqvae_checkpoint['cfg']
         
         # --- Load VQ-VAE Model ---
         self.vq_vae = VQ_VAE(self.cfg).to(self.device)
-        self.vq_vae.load_state_dict(vqvae_checkpoint['model_state_dict'])
+        # allow extra buffers/keys for compatibility
+        self.vq_vae.load_state_dict(vqvae_checkpoint['model_state_dict'], strict=False)
         self.vq_vae.eval()
-        print("✅ VQ-VAE model loaded.")
+        print("VQ-VAE model loaded.")
 
         # --- Load T2M-GPT Model ---
-        print(f"📥 Loading T2M-GPT checkpoint: {gpt_path}")
+        print(f"Loading T2M-GPT checkpoint: {gpt_path}")
         # Note: Assuming gpt_checkpoint also contains a state_dict. If it's just the model, adjust accordingly.
         gpt_checkpoint = torch.load(gpt_path, map_location="cpu", weights_only=False)
         self.t2m_gpt = T2M_GPT(self.cfg).to(self.device)
         # Check if the checkpoint is a dictionary with 'model_state_dict'
         if 'model_state_dict' in gpt_checkpoint:
-            self.t2m_gpt.load_state_dict(gpt_checkpoint['model_state_dict'])
+            self.t2m_gpt.load_state_dict(gpt_checkpoint['model_state_dict'], strict=False)
         else:
-            self.t2m_gpt.load_state_dict(gpt_checkpoint)
+            self.t2m_gpt.load_state_dict(gpt_checkpoint, strict=False)
 
         self.t2m_gpt.eval()
-        print("✅ T2M-GPT model loaded.")
+        print("T2M-GPT model loaded.")
         
         # --- Initialize Tokenizer and Visualizer ---
         self.tokenizer = BertTokenizer.from_pretrained(self.cfg.text_model_name)
@@ -49,19 +50,20 @@ class T2M_Inference:
 
     @torch.no_grad()
     def generate(self, text: str, temperature: float = 1.0, top_k: int = 20):
-        print(f"\n💬 Generating animation for text: '{text}'")
+        print(f"Generating animation for text: '{text}'")
         
         # 1. Tokenize the input text
         tokenized_text = self.tokenizer([text], return_tensors="pt", padding=True, truncation=True, max_length=77).to(self.device)
         
-        # 2. Autoregressive generation of motion tokens
+        # 2. Autoregressive generation of motion tokens with EOS
         sos_token = self.cfg.codebook_size
+        eos_token = self.cfg.codebook_size + 1 if getattr(self.cfg, 'use_eos_token', True) else None
         generated_tokens = torch.full((1, 1), sos_token, device=self.device, dtype=torch.long)
         
         # Max tokens to generate is defined in the config
         max_motion_tokens = self.cfg.vq_sequence_length
         
-        print("🤖 Generating motion tokens...")
+        print("Generating motion tokens...")
         for _ in tqdm(range(max_motion_tokens - 1)):
             input_tokens = generated_tokens
             input_mask = torch.ones_like(input_tokens, dtype=torch.bool)
@@ -78,9 +80,16 @@ class T2M_Inference:
             next_token = torch.multinomial(probs, num_samples=1)
             
             generated_tokens = torch.cat([generated_tokens, next_token], dim=1)
+            if eos_token is not None and int(next_token.item()) == eos_token:
+                break
             
+        # Remove SOS and optional EOS
         motion_indices = generated_tokens[:, 1:]
-        print(f"✅ Generated {motion_indices.shape[1]} motion tokens.")
+        if eos_token is not None:
+            eos_pos = (motion_indices == eos_token).float().argmax(dim=1).item()
+            if eos_pos > 0:
+                motion_indices = motion_indices[:, :eos_pos]
+        print(f"Generated {motion_indices.shape[1]} motion tokens.")
         
         # 3. Decode motion tokens into pose sequence using VQ-VAE
         print("Decoding tokens into pose sequence...")
@@ -121,14 +130,14 @@ def main():
         safe_filename = safe_filename.replace(' ', '_')
         output_path = os.path.join(args.output_dir, f"{safe_filename}.gif")
         
-        print(f"🎬 Saving animation to {output_path}...")
+        print(f"Saving animation to {output_path}...")
         os.makedirs(args.output_dir, exist_ok=True)
         inference_engine.visualizer.create_animation(
             pose_sequence=pose_output,
             output_path=output_path,
             title=text_prompt
         )
-        print(f"🎉 Animation saved successfully!")
+        print(f"Animation saved successfully!")
 
     if args.text:
         generate_and_save(args.text)

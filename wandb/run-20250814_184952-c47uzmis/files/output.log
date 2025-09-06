@@ -1,0 +1,15 @@
+📥 Loading pre-trained VQ-VAE from: ./checkpoints/vqvae_model.pth
+C:\Users\22949\AppData\Roaming\Python\Python312\site-packages\torch\nn\modules\transformer.py:382: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+Traceback (most recent call last):
+  File "D:\Graduate thesis\eggroll_v2\2_train_gpt.py", line 229, in <module>
+    main()
+  File "D:\Graduate thesis\eggroll_v2\2_train_gpt.py", line 225, in main
+    trainer = GPTTrainer(cfg, args.wandb)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Graduate thesis\eggroll_v2\2_train_gpt.py", line 27, in __init__
+    self.vq_vae.load_state_dict(vqvae_checkpoint['model_state_dict'])
+  File "C:\Users\22949\AppData\Roaming\Python\Python312\site-packages\torch\nn\modules\module.py", line 2593, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for VQ_VAE:
+	Unexpected key(s) in state_dict: "decoder.fk_parents", "decoder.fk_rest".

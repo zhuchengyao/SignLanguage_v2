@@ -1,0 +1,13 @@
+{
+  "word": "before",
+  "split": "train",
+  "sid": "05728",
+  "sample_dir": "./datasets\\ASL_gloss\\train\\05728",
+  "input_frames": 19,
+  "disp_shape": [
+    18,
+    50,
+    2
+  ],
+  "include_delta_conf": false
+}

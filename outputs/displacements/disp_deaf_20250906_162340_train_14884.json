@@ -1,0 +1,13 @@
+{
+  "word": "deaf",
+  "split": "train",
+  "sid": "14884",
+  "sample_dir": "./datasets\\ASL_gloss\\train\\14884",
+  "input_frames": 23,
+  "disp_shape": [
+    22,
+    50,
+    2
+  ],
+  "include_delta_conf": false
+}

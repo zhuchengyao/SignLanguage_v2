@@ -21,14 +21,15 @@ class GPTTrainer:
         self.use_wandb = use_wandb
 
         # 1. Load the pre-trained VQ-VAE
-        print(f"📥 Loading pre-trained VQ-VAE from: {cfg.vqvae_checkpoint_path}")
-        vqvae_checkpoint = torch.load(cfg.vqvae_checkpoint_path, map_location="cpu")
+        print(f"Loading pre-trained VQ-VAE from: {cfg.vqvae_checkpoint_path}")
+        vqvae_checkpoint = torch.load(cfg.vqvae_checkpoint_path, map_location="cpu", weights_only=False)
         self.vq_vae = VQ_VAE(vqvae_checkpoint['cfg']).to(self.device)
-        self.vq_vae.load_state_dict(vqvae_checkpoint['model_state_dict'])
+        # Allow extra buffers/keys (e.g., kinematic decoder buffers) to be ignored for compatibility
+        _ = self.vq_vae.load_state_dict(vqvae_checkpoint['model_state_dict'], strict=False)
         self.vq_vae.eval()
         for param in self.vq_vae.parameters():
             param.requires_grad = False
-        print("✅ VQ-VAE loaded and frozen.")
+        print("VQ-VAE loaded and frozen.")
         
         # 2. Initialize the T2M-GPT model and tokenizer
         self.model = T2M_GPT(cfg).to(self.device)
@@ -44,15 +45,32 @@ class GPTTrainer:
         self.global_step = 0
         self.best_loss = float('inf')
 
-        print(f"🤖 T2M-GPT Model Parameters (Trainable): {sum(p.numel() for p in self.model.parameters() if p.requires_grad):,}")
+        print(f"T2M-GPT Model Parameters (Trainable): {sum(p.numel() for p in self.model.parameters() if p.requires_grad):,}")
 
     def create_dataloaders(self):
         train_dataset = ASLPoseDataset(data_paths=[os.path.join(self.cfg.data_root, "ASL_gloss/train")], split="train")
         val_dataset = ASLPoseDataset(data_paths=[os.path.join(self.cfg.data_root, "ASL_gloss/dev")], split="dev", extern_mean=train_dataset.pose_mean, extern_std=train_dataset.pose_std)
         sampler_cache_path = os.path.join(self.cfg.data_root, "ASL_gloss/.cache", "gpt_train_sampler_cache.pt")
         train_sampler = BucketSampler(train_dataset, self.cfg.batch_size, boundaries=[50, 100, 150, 200, 300], shuffle=True, cache_path=sampler_cache_path)
-        train_loader = DataLoader(train_dataset, batch_sampler=train_sampler, collate_fn=collate_pose_batch, num_workers=4, pin_memory=True)
-        val_loader = DataLoader(val_dataset, batch_size=self.cfg.val_batch_size, shuffle=False, collate_fn=collate_pose_batch, num_workers=4, pin_memory=True)
+        train_loader = DataLoader(
+            train_dataset,
+            batch_sampler=train_sampler,
+            collate_fn=collate_pose_batch,
+            num_workers=self.cfg.num_workers,
+            pin_memory=self.cfg.pin_memory,
+            persistent_workers=self.cfg.persistent_workers if self.cfg.num_workers > 0 else False,
+            prefetch_factor=self.cfg.prefetch_factor if self.cfg.num_workers > 0 else None,
+        )
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=self.cfg.val_batch_size,
+            shuffle=False,
+            collate_fn=collate_pose_batch,
+            num_workers=self.cfg.num_workers,
+            pin_memory=self.cfg.pin_memory,
+            persistent_workers=self.cfg.persistent_workers if self.cfg.num_workers > 0 else False,
+            prefetch_factor=self.cfg.prefetch_factor if self.cfg.num_workers > 0 else None,
+        )
         return train_loader, val_loader
 
     @torch.no_grad()
@@ -79,18 +97,33 @@ class GPTTrainer:
             motion_token_mask = torch.arange(T_down, device=self.device).expand(B, T_down) < num_valid_tokens.unsqueeze(1)
             
             sos_token = self.cfg.codebook_size
+            eos_token = self.cfg.codebook_size + 1 if getattr(self.cfg, 'use_eos_token', True) else None
             sos_tensor = torch.full((B, 1), sos_token, device=self.device, dtype=torch.long)
             
             input_tokens = torch.cat([sos_tensor, gt_motion_tokens[:, :-1]], dim=1)
-            target_tokens = gt_motion_tokens
+            target_tokens = gt_motion_tokens.clone()
             input_mask = torch.cat([torch.ones_like(sos_tensor, dtype=torch.bool), motion_token_mask[:, :-1]], dim=1)
+            if eos_token is not None:
+                # set EOS at the first invalid position (or last)
+                first_invalid = (~motion_token_mask).float().argmax(dim=1)
+                for b in range(B):
+                    pos = first_invalid[b].item()
+                    if motion_token_mask[b, -1]:
+                        # all valid: append EOS implicitly by setting last target to EOS (teacher forcing)
+                        target_tokens[b, -1] = eos_token
+                    else:
+                        target_tokens[b, pos] = eos_token
             
             tokenized_text = self.tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=77).to(self.device)
             
             predicted_logits = self.model(tokenized_text, input_tokens, input_mask)
             
-            target_tokens[~motion_token_mask] = self.criterion.ignore_index
-            loss = self.criterion(predicted_logits.reshape(-1, self.cfg.codebook_size), target_tokens.reshape(-1))
+            ignore_mask = ~motion_token_mask
+            if eos_token is not None:
+                # allow EOS position to be trained; ignore only strictly beyond EOS
+                pass
+            target_tokens[ignore_mask] = self.criterion.ignore_index
+            loss = self.criterion(predicted_logits.reshape(-1, predicted_logits.size(-1)), target_tokens.reshape(-1))
             
             self.optimizer.zero_grad()
             loss.backward()
@@ -118,18 +151,27 @@ class GPTTrainer:
             motion_token_mask = torch.arange(T_down, device=self.device).expand(B, T_down) < num_valid_tokens.unsqueeze(1)
             
             sos_token = self.cfg.codebook_size
+            eos_token = self.cfg.codebook_size + 1 if getattr(self.cfg, 'use_eos_token', True) else None
             sos_tensor = torch.full((B, 1), sos_token, device=self.device, dtype=torch.long)
             
             input_tokens = torch.cat([sos_tensor, gt_motion_tokens[:, :-1]], dim=1)
-            target_tokens = gt_motion_tokens
+            target_tokens = gt_motion_tokens.clone()
             input_mask = torch.cat([torch.ones_like(sos_tensor, dtype=torch.bool), motion_token_mask[:, :-1]], dim=1)
+            if eos_token is not None:
+                first_invalid = (~motion_token_mask).float().argmax(dim=1)
+                for b in range(B):
+                    pos = first_invalid[b].item()
+                    if motion_token_mask[b, -1]:
+                        target_tokens[b, -1] = eos_token
+                    else:
+                        target_tokens[b, pos] = eos_token
             
             tokenized_text = self.tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=77).to(self.device)
             
             predicted_logits = self.model(tokenized_text, input_tokens, input_mask)
             
             target_tokens[~motion_token_mask] = self.criterion.ignore_index
-            loss = self.criterion(predicted_logits.reshape(-1, self.cfg.codebook_size), target_tokens.reshape(-1))
+            loss = self.criterion(predicted_logits.reshape(-1, predicted_logits.size(-1)), target_tokens.reshape(-1))
             
             total_loss += loss.item()
         
@@ -153,7 +195,7 @@ class GPTTrainer:
         torch.save(checkpoint, latest_path)
         if is_best:
             torch.save(checkpoint, self.cfg.gpt_checkpoint_path)
-            print(f"💾 Saved best GPT model to: {self.cfg.gpt_checkpoint_path}")
+            print(f"Saved best GPT model to: {self.cfg.gpt_checkpoint_path}")
 
     def train(self):
         train_loader, val_loader = self.create_dataloaders()
@@ -170,18 +212,19 @@ class GPTTrainer:
             
             self.save_checkpoint(epoch, val_loss, is_best=is_best)
             self.scheduler.step()
-        print(f"🎉 GPT Training complete! Best validation loss: {self.best_loss:.4f}")
+        print(f"GPT Training complete! Best validation loss: {self.best_loss:.4f}")
 
 def main():
     parser = argparse.ArgumentParser(description='Train T2M-GPT (Phase 2)')
     parser.add_argument('--wandb', action='store_true', help='Use wandb for logging')
+    parser.add_argument('--no_wandb', action='store_true', help='Disable wandb even if --wandb is set')
     args = parser.parse_args()
     cfg = T2M_Config()
     
-    if args.wandb:
+    if args.wandb and not args.no_wandb:
         wandb.init(project="t2m-gpt-sign-language", name=f"gpt_{datetime.now().strftime('%Y%m%d_%H%M')}", config=vars(cfg))
         
-    trainer = GPTTrainer(cfg, args.wandb)
+    trainer = GPTTrainer(cfg, use_wandb=(args.wandb and not args.no_wandb))
     trainer.train()
 
 if __name__ == "__main__":

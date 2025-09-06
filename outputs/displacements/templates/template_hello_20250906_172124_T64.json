@@ -1,0 +1,19 @@
+{
+  "word": "hello",
+  "T_star": 64,
+  "deltas_shape": [
+    64,
+    50,
+    2
+  ],
+  "positions_shape": [
+    65,
+    50,
+    2
+  ],
+  "sources": [
+    "outputs/displacements\\disp_hello_20250906_162340_train_27173.npy",
+    "outputs/displacements\\disp_hello_20250906_162340_train_27180.npy"
+  ],
+  "note": "deltas are robust-median after phase resampling; positions integrated from zeros"
+}

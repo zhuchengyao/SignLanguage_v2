@@ -1,0 +1,13 @@
+{
+  "word": "computer",
+  "split": "train",
+  "sid": "12313",
+  "sample_dir": "./datasets\\ASL_gloss\\train\\12313",
+  "input_frames": 51,
+  "disp_shape": [
+    50,
+    50,
+    2
+  ],
+  "include_delta_conf": false
+}

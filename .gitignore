@@ -6,3 +6,11 @@ runs/
 runs_final/
 runs_mask/
 debug_gif/
+outputs/
+wandb/
+utputs/
+*.zip
+*.log
+__pycache__/
+**/__pycache__/
+*.pyc

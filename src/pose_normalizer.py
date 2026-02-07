@@ -84,3 +84,55 @@ def normalize_sequence_xy(seq_xy: np.ndarray) -> Tuple[np.ndarray, dict]:
     return out, {'frames': infos}
 
 
+def normalize_sequence_xy_global(seq_xy: np.ndarray, eps: float = 1e-6) -> Tuple[np.ndarray, dict]:
+    """
+    Sequence-level unified normalization using FIRST frame's transform
+    (pelvis translation, shoulder-based rotation/mirroring, and scaling)
+    applied consistently to ALL frames.
+    Inputs: seq_xy (T,50,2)
+    Returns: (seq_norm_global, info)
+    """
+    assert seq_xy.ndim == 3 and seq_xy.shape[1:] == (50, 2)
+    T = seq_xy.shape[0]
+    p0 = seq_xy[0].astype(np.float32)
+
+    pelvis0 = p0[PELVIS]
+    chest0 = p0[CHEST]
+    r_sh0 = p0[RIGHT_SHOULDER]
+    l_sh0 = p0[LEFT_SHOULDER]
+
+    # Translation (all frames minus pelvis0)
+    seq_t = (seq_xy - pelvis0).astype(np.float32)
+
+    # Rotation: align shoulder vector to +x using frame 0
+    sh_vec0 = (l_sh0 - r_sh0).astype(np.float32)
+    theta0 = float(np.arctan2(sh_vec0[1], sh_vec0[0]))
+    R = _rotation_matrix(-theta0)  # rotate by -theta0
+    seq_tr = np.einsum('ij,tkj->tki', R, seq_t)
+
+    # Mirror X if left shoulder still left of right shoulder after rotation
+    r_sh_rot0 = (r_sh0 - pelvis0) @ R
+    l_sh_rot0 = (l_sh0 - pelvis0) @ R
+    mirror = False
+    if l_sh_rot0[0] < r_sh_rot0[0]:
+        mirror = True
+        seq_tr[:, :, 0] *= -1.0
+
+    # Scale by shoulder width (fallback torso length) from frame 0 metrics
+    sh_width0 = float(np.linalg.norm(l_sh_rot0 - r_sh_rot0))
+    chest_rot0 = (chest0 - pelvis0) @ R
+    if mirror:
+        chest_rot0[0] *= -1.0
+    torso_len0 = float(np.linalg.norm(chest_rot0))
+    denom = max(sh_width0, torso_len0, eps)
+    seq_norm = (seq_tr / denom).astype(np.float32)
+
+    info = {
+        'pelvis0': pelvis0.tolist(),
+        'theta0': theta0,
+        'mirrored_x': bool(mirror),
+        'scale_denom0': denom,
+    }
+    return seq_norm, info
+
+

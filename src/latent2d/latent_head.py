@@ -31,7 +31,8 @@ class LatentBottleneck2D(nn.Module):
     def decode_from_latent(self, z: torch.Tensor) -> torch.Tensor:
         # z: (B,T,latent_dim)
         memory = self.from_latent(z)
-        preds = self.ae.decoder(memory)  # (B,T, 50+50+2)
+        steps = getattr(self.ae.cfg, 'diffusion_sample_steps', 50)
+        preds = self.ae.decoder.sample(memory, steps=steps)  # (B,T, 50+50+2)
         return preds
 
 

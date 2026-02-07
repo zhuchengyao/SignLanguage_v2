@@ -43,6 +43,41 @@ class ASLVisualizer:
         valid = (confidence > threshold)
         return valid
 
+    def interpolate_missing_points(self, pose_sequence: np.ndarray) -> np.ndarray:
+        """
+        对置信度为 0 的关键点做简单插帧：取前后最近的非零帧的对应点坐标求平均。
+        边界（无前或后有效点）保持原值以避免外推。
+        """
+        if pose_sequence.ndim != 2 or pose_sequence.shape[1] != 150:
+            raise ValueError(f"Expected pose_sequence shape (T,150), got {pose_sequence.shape}")
+        seq = np.array(pose_sequence, copy=True, dtype=np.float32)
+        T = seq.shape[0]
+        if T == 0:
+            return seq
+        joints = 50
+        seq_view = seq.reshape(T, joints, 3)
+        coords = seq_view[..., :2]
+        conf = seq_view[..., 2]
+        missing_mask = conf <= 0.0
+        for j in range(joints):
+            missing_idx = np.where(missing_mask[:, j])[0]
+            if missing_idx.size == 0:
+                continue
+            valid_idx = np.where(~missing_mask[:, j])[0]
+            if valid_idx.size == 0:
+                continue
+            for t in missing_idx:
+                prev_candidates = valid_idx[valid_idx < t]
+                next_candidates = valid_idx[valid_idx > t]
+                if prev_candidates.size == 0 or next_candidates.size == 0:
+                    # 边界：缺少前或后的有效帧，直接跳过
+                    continue
+                prev_t = prev_candidates[-1]
+                next_t = next_candidates[0]
+                coords[t, j] = 0.5 * (coords[prev_t, j] + coords[next_t, j])
+                conf[t, j] = 0.5 * (conf[prev_t, j] + conf[next_t, j])
+        return seq_view.reshape(T, -1)
+
     def draw_skeleton_part(self, ax: plt.Axes, points: np.ndarray, connections: List[Tuple], color_config: dict, size: int, line_width: float):
         valid_mask = self.filter_valid_points(points)
         if not valid_mask.any(): return
@@ -70,8 +105,18 @@ class ASLVisualizer:
         ax.set_xticks([])
         ax.set_yticks([])
 
-    def create_animation(self, pose_sequence: np.ndarray, output_path: str, title: str = "手语动画", fps: int = 15):
+    def create_animation(
+        self,
+        pose_sequence: np.ndarray,
+        output_path: str,
+        title: str = "手语动画",
+        fps: int = 15,
+        interpolate_missing: bool = True,
+    ):
         if len(pose_sequence) == 0: raise ValueError("Pose sequence is empty")
+        pose_sequence = np.array(pose_sequence, dtype=np.float32, copy=False)
+        if interpolate_missing:
+            pose_sequence = self.interpolate_missing_points(pose_sequence)
         fig, ax = plt.subplots(figsize=(8, 8))
         all_coords = np.concatenate([self.parse_pose_150d(p)[i][:, :2] for p in pose_sequence for i in range(3)])
         # 放宽可视窗范围，避免坐标过小导致看似空白

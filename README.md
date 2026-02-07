@@ -1,155 +1,141 @@
-# Text-to-Pose 手语生成系统（VQ‑VAE + GPT）
+﻿# eggroll_v2
 
-从自然语言文本生成对应的 2D 手语 pose 序列。系统采用两阶段范式：首先用 VQ‑VAE 将连续姿态序列离散化为“动作码”，再用文本条件的自回归 GPT 生成这些码，最后解码为完整的姿态序列并可视化为 GIF。
+Text-to-pose（手语姿态）两阶段训练项目：
 
-## 📋 项目概述
+1. VQ-VAE：`pose -> discrete motion tokens`
+2. GPT：`text -> motion tokens -> VQ-VAE decode`
 
-两阶段训练流程：
+## 项目重构说明
 
-1. **VQ‑VAE**：学习 pose 序列的时空表示，并量化为离散码（codebook token）；可将离散码解码回 pose 序列。
-2. **T2M‑GPT**：冻结文本编码器（BERT），自回归生成离散动作码（含 SOS/EOS），实现文本到动作序列的生成。
+本仓库已重构为“核心代码 + 分层命令入口”模式：
 
-## 🏗️ 系统架构
+- `src/`：核心模型、数据、工具模块（可复用）
+- `src/commands/`：所有可执行入口（按功能分层）
+- `run.py`：统一命令调度器
 
-```mermaid
-graph TD
-    subgraph Stage1["阶段一：VQ‑VAE（Pose ↔ Token）"]
-        direction TB
-        A["Pose 序列 (T × 150)"] --> B["Motion Encoder\n(Transformer) ↓rate=4"]
-        B --> C["Vector Quantizer\n(codebook_size=2048)"]
-        C --> D["Motion Decoder\n(Transformer)"]
-        D --> E["重建 Pose 序列 (T × 150)"]
-    end
+不再在根目录平铺训练/评估脚本。
 
-    subgraph Stage2["阶段二：T2M‑GPT（Text → Token）"]
-        direction TB
-        T["文本"] --> X["BERT (frozen)"]
-        X --> Y["Transformer Decoder (GPT)"]
-        Y --> Z["离散动作码 (含SOS/EOS)"]
-    end
+## 目录结构
 
-    Z -->|Decode| E
+```text
+src/
+  config.py
+  dataloader.py
+  model_vqvae.py
+  model_gpt.py
+  train_utils.py
+  cli_args.py
+  latent/
+  latent2d/
+    data_utils.py
+  commands/
+    train/
+      vqvae.py
+      gpt.py
+      ae2d.py
+      flow2d.py
+    infer/
+      t2m.py
+      flow2d_text.py
+    eval/
+      vqvae.py
+      gpt_bleu.py
+    data/
+      extract_displacements.py
+      avg_displacements.py
+    viz/
+      flow2d_samples.py
+      gt_text.py
+      p0_points.py
+      reconstruct_from_deltas.py
+    verify/
+      latent_step1.py
+      latent2d_step1.py
+    debug/
+      memory_leak.py
+run.py
 ```
 
-### 核心组件
+## 环境安装
 
-- **Text Encoder**：BERT（冻结参数）
-- **Motion Encoder/Decoder**：Transformer 编解码器 + 下采样/上采样
-- **Vector Quantizer**：向量量化器（支持 EMA 更新）
-- **Kinematic Decoder（可选）**：基于 2D 骨骼前向运动学的几何一致性解码
-- **Sign‑aware Loss**：手部更高权重、骨长一致性与时序平滑正则
-
-## 📊 数据格式
-
-### Pose 数据结构（150 维）
-- **身体关键点**：8 个点 × 3 (x, y, confidence) = 24 维
-- **右手关键点**：21 个点 × 3 = 63 维
-- **左手关键点**：21 个点 × 3 = 63 维
-- **面部关键点**：暂未使用（设为 0）
-
-### 数据集目录
-```
-datasets/ASL_gloss/
-├── train/                # 训练数据
-├── dev/                  # 验证数据
-├── test/                 # 测试数据
-└── <split>/<sid>/{text.txt, pose.json}
-```
-
-其中 `text.txt` 为文本，`pose.json` 为帧序列，每帧拼接为 150 维（与上面顺序一致）。首次运行会在 `.cache/` 下缓存统计量与采样桶信息。
-
-## 🚀 快速开始
-
-### 1. 安装依赖
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. 准备数据
-- 在 `src/config.py` 中确认 `self.data_root = "./datasets"`。
-- 保证目录结构与文件命名符合“数据集目录”一节。
+## 数据目录
 
-### 3. 训练 VQ‑VAE（阶段一）
-```bash
-python 1_train_vqvae.py --wandb --session_epochs 3
+默认从 `./datasets/ASL_gloss` 读取：
+
+```text
+datasets/ASL_gloss/
+  train/<sid>/{text.txt, pose.json}
+  dev/<sid>/{text.txt, pose.json}
+  test/<sid>/{text.txt, pose.json}
 ```
-- 支持断点续训，权重保存至 `./checkpoints/vqvae_model_latest.pth` 与 `./checkpoints/vqvae_model.pth`（best）。
 
-### 4. 训练 T2M‑GPT（阶段二）
+## 统一命令（推荐）
+
+通过 `run.py` 执行：
+
 ```bash
-python 2_train_gpt.py --wandb
+python run.py train-vqvae --session_epochs 3
+python run.py train-gpt
+python run.py infer-t2m --text "apple"
+python run.py eval-vqvae --checkpoint ./checkpoints/vqvae_model.pth
+python run.py eval-gpt-bleu --vqvae_checkpoint ./checkpoints/vqvae_model.pth --gpt_checkpoint ./checkpoints/t2m_gpt_model.pth
 ```
-- 依赖 `./checkpoints/vqvae_model.pth`。
 
-### 5. 文本到姿态推理与可视化
+也可以直接运行模块：
+
 ```bash
-python 3_inference.py \
+python -m src.commands.train.vqvae --session_epochs 3
+python -m src.commands.infer.t2m --text "hello"
+```
+
+## 常用流程
+
+1. 训练 VQ-VAE
+
+```bash
+python run.py train-vqvae --session_epochs 3
+```
+
+2. 训练 GPT
+
+```bash
+python run.py train-gpt
+```
+
+3. 文本推理并导出 GIF
+
+```bash
+python run.py infer-t2m \
   --vqvae_checkpoint ./checkpoints/vqvae_model.pth \
-  --gpt_checkpoint   ./checkpoints/t2m_gpt_model.pth \
+  --gpt_checkpoint ./checkpoints/t2m_gpt_model.pth \
   --text "apple" \
   --output_dir ./outputs
 ```
-输出 GIF 位于 `outputs/`。
 
-## 📁 文件说明
+## 其他工具命令
 
-- `src/config.py`：统一配置（模型规模、训练超参、数据根目录等）
-- `src/dataloader.py`：数据加载、统计缓存、分桶采样 `BucketSampler`
-- `src/model_vqvae.py`：VQ‑VAE（Transformer 编/解码 + 向量量化 + 可选运动学解码与 sign‑aware 损失）
-- `src/model_gpt.py`：文本条件 GPT（冻结 BERT + Transformer Decoder，自回归生成动作码）
-- `1_train_vqvae.py`：VQ‑VAE 训练脚本（Session 化、自动断点续训、W&B 可选）
-- `2_train_gpt.py`：T2M‑GPT 训练脚本（验证与 best/last 权重保存）
-- `3_inference.py`：推理与可视化（按 `downsample_rate` 还原帧长）
-- `src/asl_visualizer.py`：将姿态序列渲染为 GIF（调色与布局可自定义）
+- 位移提取与模板
+  - `python run.py data-extract-displacements ...`
+  - `python run.py data-avg-displacements ...`
+- 2D latent 系列
+  - `python run.py train-ae2d ...`
+  - `python run.py train-flow2d ...`
+  - `python run.py infer-flow2d-text ...`
+- 可视化
+  - `python run.py viz-flow2d-samples ...`
+  - `python run.py viz-gt-text ...`
+  - `python run.py viz-p0-points ...`
+  - `python run.py viz-reconstruct-deltas ...`
+- 验证与调试
+  - `python run.py verify-latent-step1`
+  - `python run.py verify-latent2d-step1`
+  - `python run.py debug-memory-leak`
 
-## 🎯 训练细节与特性
+## 说明
 
-- **Codebook**：`codebook_size=2048`，`embedding_dim=384`
-- **时间下采样率**：`downsample_rate=4`（token ↔ 帧数之间的映射）
-- **Sign‑aware 重建**：手部更高权重、置信度加权、骨长一致性与速度/加速度平滑
-- **Windows 友好**：默认 `num_workers=0`, `pin_memory=False` 以避免内存抖动
-
-## 🔧 关键配置（节选）
-
-```python
-# src/config.py（节选）
-pose_dim = 150
-codebook_size = 2048
-downsample_rate = 4
-vqvae_num_epochs = 120
-gpt_num_epochs = 50
-text_model_name = "bert-base-uncased"
-use_kinematic_decoder = True
-```
-
-## 📱 应用场景
-
-- **手语翻译**：文本转手语动作
-- **虚拟数字人**：驱动角色进行手语表达
-- **辅助交流**：为听障人群提供更直观的沟通方式
-- **教育培训**：手语教学与练习评估
-
-## 🔬 扩展方向
-
-1. 更大规模数据与更丰富词汇/句子级生成
-2. 运动学与物理先验的更强约束
-3. 更优自回归采样（如温度、top‑k、top‑p 动态调度）
-4. 3D 骨架与多模态（音频/视频）联合建模
-
-## ⚠️ 注意事项
-
-- 首次运行会自动下载 `bert-base-uncased`（需联网或已有本地缓存）。
-- `pose.json` 每帧必须是 150 维拼接，缺帧会使样本跳过。
-- `.cache/` 下会缓存统计量与长度分桶以加速训练。
-
-## 🤝 致谢
-
-- OpenPose / MediaPipe（姿态与手部关键点范式）
-- VQ‑VAE / Vector Quantization 系列工作
-- Transformer / GPT 系列工作
-
----
-
-**作者**: Chengyao Zhu  
-**日期**: 2025年6月  
-**许可**: MIT License
+- `cfg`（`src/config.py`）仍是训练默认参数单一来源。
+- 新结构下脚本间不再互相依赖入口文件，公共逻辑统一在 `src` 模块中。

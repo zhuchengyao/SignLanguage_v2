@@ -26,7 +26,7 @@ def collate_pose_batch(batch: List[Tuple[str, torch.Tensor]]) -> Tuple[Optional[
 class BucketSampler(Sampler):
     # ... This class remains the same ...
     def __init__(self, dataset, batch_size, boundaries, shuffle=True, cache_path: str = "sampler_cache.pt"):
-        super().__init__(dataset)
+        super().__init__()
         self.dataset = dataset
         self.batch_size = batch_size
         self.boundaries = boundaries
@@ -93,7 +93,7 @@ class ASLPoseDataset(Dataset):
             stats_cache_path = os.path.join(cache_dir, f"{self.split}_stats.npz")
             
             if extern_mean is not None and extern_std is not None:
-                print(f"  Using external μ/σ for {self.split} set.")
+                print(f"  Using external mean/std for {self.split} set.")
                 self.pose_mean, self.pose_std = extern_mean, extern_std
             elif self.sample_paths:
                 if os.path.exists(stats_cache_path):
@@ -187,3 +187,4 @@ class ASLPoseDataset(Dataset):
             return item
         except Exception:
             return None
+

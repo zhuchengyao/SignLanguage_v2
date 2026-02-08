@@ -96,6 +96,7 @@ class VQVAETrainer:
     def train_epoch(self, train_loader, epoch: int):
         self.model.train()
         pbar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{self.cfg.vqvae_num_epochs}")
+        last_z_e = None
 
         for batch in pbar:
             if batch[0] is None:
@@ -112,6 +113,9 @@ class VQVAETrainer:
             total_loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
             self.optimizer.step()
+
+            # Save encoder output for dead code reinitialization
+            last_z_e = outputs.get("z_e")
 
             try:
                 ppl = codebook_perplexity(outputs["indices"], self.cfg.codebook_size)
@@ -136,9 +140,8 @@ class VQVAETrainer:
                     "Bone": f"{metrics['bone_length_loss'].item():.4f}",
                     "Vel": f"{metrics['velocity_loss'].item():.4f}",
                     "Acc": f"{metrics['accel_loss'].item():.4f}",
+                    "VQ": f"{metrics['vq_loss'].item():.4f}",
                     "PPL": f"{ppl:.1f}",
-                    "cVQ": f"{metrics['coarse_vq_loss'].item():.4f}",
-                    "cPPL": f"{ppl_coarse:.1f}",
                 }
             )
 
@@ -160,6 +163,17 @@ class VQVAETrainer:
                     step=self.global_step,
                 )
             self.global_step += 1
+
+        # Reinitialize dead codebook entries at the end of each epoch
+        if last_z_e is not None:
+            with torch.no_grad():
+                num_reinit = self.model.quantizer_fine.reinit_dead_codes(last_z_e.detach())
+                if num_reinit > 0:
+                    print(f"  [Codebook] Reinitialized {num_reinit}/{self.cfg.codebook_size} dead codes in fine quantizer")
+                if self.model.quantizer_coarse is not None:
+                    num_reinit_c = self.model.quantizer_coarse.reinit_dead_codes(last_z_e.detach())
+                    if num_reinit_c > 0:
+                        print(f"  [Codebook] Reinitialized {num_reinit_c} dead codes in coarse quantizer")
 
     @torch.no_grad()
     def validate(self, val_loader):

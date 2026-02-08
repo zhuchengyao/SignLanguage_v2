@@ -12,9 +12,9 @@ class T2M_Config:
         self.pose_dim = 150
 
         # --- Kinematic layout ---
-        self.use_kinematic_decoder = True
+        self.use_kinematic_decoder = False
         self.num_joints_2d = 50
-        self.enable_hand_residual = True
+        self.enable_hand_residual = False
         self.hand_residual_scale = 0.2
         self.hand_residual_max_scale = 0.2
         self.kinematic_scale_center = 1.0
@@ -24,16 +24,16 @@ class T2M_Config:
 
         # --- VQ-VAE Architecture ---
         self.model_max_seq_len = 500
-        self.motion_encoder_layers = 6
-        self.motion_encoder_heads = 12
-        self.motion_encoder_hidden_dim = 768
+        self.motion_encoder_layers = 4
+        self.motion_encoder_heads = 4
+        self.motion_encoder_hidden_dim = 256
         self.motion_encoder_dropout = 0.1
-        self.motion_decoder_layers = 6
-        self.motion_decoder_heads = 12
-        self.motion_decoder_hidden_dim = 768
+        self.motion_decoder_layers = 4
+        self.motion_decoder_heads = 4
+        self.motion_decoder_hidden_dim = 256
         self.motion_decoder_dropout = 0.1
-        self.embedding_dim = 384
-        self.codebook_size = 2048
+        self.embedding_dim = 256
+        self.codebook_size = 512
         self.downsample_rate = 4
 
         # --- Hierarchical VQ (coarse-to-fine) ---
@@ -49,9 +49,9 @@ class T2M_Config:
         self.coarse_lookup_token_chunk = 2048
 
         # --- VQ-VAE Quantizer ---
-        self.commitment_cost = 0.25
+        self.commitment_cost = 1.0
         self.use_ema_update = True
-        self.ema_decay = 0.99
+        self.ema_decay = 0.95
         self.epsilon = 1e-5
         self.vq_lookup_token_chunk = 4096
         self.vq_lookup_code_chunk = 4096
@@ -60,21 +60,21 @@ class T2M_Config:
         self.vqvae_checkpoint_path = "./checkpoints/vqvae_model.pth"
         self.batch_size = 32
         self.val_batch_size = 16
-        self.vqvae_num_epochs = 120
+        self.vqvae_num_epochs = 200
         self.vqvae_learning_rate = 3e-4
         self.recon_loss_weight = 1.0
-        self.vq_loss_weight = 0.25
-        self.vq_weight_warmup_epochs = 10
+        self.vq_loss_weight = 1.0
+        self.vq_weight_warmup_epochs = 5
 
         # --- Sign-aware reconstruction and regularization ---
         self.body_point_weight = 1.0
         self.hand_point_weight = 2.0
         self.use_confidence_weight = True
         self.conf_weight_gamma = 1.0
-        self.weighted_recon_loss_weight = 1.0
-        self.bone_length_loss_weight = 0.10
-        self.temporal_velocity_loss_weight = 0.05
-        self.temporal_accel_loss_weight = 0.00
+        self.weighted_recon_loss_weight = 0.5
+        self.bone_length_loss_weight = 0.5
+        self.temporal_velocity_loss_weight = 0.1
+        self.temporal_accel_loss_weight = 0.02
 
         # --- DataLoader ---
         self.num_workers = 0

@@ -169,12 +169,15 @@ class MotionDecoder(nn.Module):
             )
             self.coarse_residual_scale = nn.Parameter(torch.tensor(getattr(cfg, 'coarse_decoder_residual_scale', 1.0), dtype=torch.float32))
         self.pos_encoding = PositionalEncoding(cfg.motion_decoder_hidden_dim, cfg.model_max_seq_len)
-        decoder_layer = nn.TransformerDecoderLayer(
+        # Use TransformerEncoder (self-attention) for direct latent-to-pose mapping
+        # instead of TransformerDecoder + query_embedding which creates an indirect info path
+        enc_layer = nn.TransformerEncoderLayer(
             d_model=cfg.motion_decoder_hidden_dim, nhead=cfg.motion_decoder_heads,
             dim_feedforward=cfg.motion_decoder_hidden_dim * 4, dropout=cfg.motion_decoder_dropout,
             activation="gelu", batch_first=True, norm_first=True
         )
-        self.transformer = nn.TransformerDecoder(decoder_layer, num_layers=cfg.motion_decoder_layers)
+        self.transformer = nn.TransformerEncoder(enc_layer, num_layers=cfg.motion_decoder_layers)
+        self.final_norm = nn.LayerNorm(cfg.motion_decoder_hidden_dim)
         # Output head: either direct pose or kinematic params
         if getattr(cfg, 'use_kinematic_decoder', False):
             J = getattr(cfg, 'num_joints_2d', 50)
@@ -188,7 +191,6 @@ class MotionDecoder(nn.Module):
             self.J = J
         else:
             self.output_projection = nn.Linear(cfg.motion_decoder_hidden_dim, cfg.pose_dim)
-        self.query_embedding = nn.Parameter(torch.randn(1, cfg.model_max_seq_len, cfg.motion_decoder_hidden_dim))
 
     def _build_default_rest_offsets(self, parents: torch.Tensor, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
         rest = torch.zeros(self.J, 2, device=device, dtype=dtype)
@@ -286,14 +288,14 @@ class MotionDecoder(nn.Module):
 
     def forward(self, memory: torch.Tensor, target_length: int, coarse_memory: torch.Tensor = None) -> torch.Tensor:
         B = memory.size(0)
-        memory = self.input_projection(memory)
-        memory = memory.transpose(1, 2)
-        memory = self.temporal_upsample(memory)
-        memory = memory.transpose(1, 2)
-        if memory.size(1) < target_length:
-            pad = memory.new_zeros(B, target_length - memory.size(1), memory.size(2))
-            memory = torch.cat([memory, pad], dim=1)
-        memory = memory[:, :target_length, :]
+        x = self.input_projection(memory)
+        x = x.transpose(1, 2)
+        x = self.temporal_upsample(x)
+        x = x.transpose(1, 2)
+        if x.size(1) < target_length:
+            pad = x.new_zeros(B, target_length - x.size(1), x.size(2))
+            x = torch.cat([x, pad], dim=1)
+        x = x[:, :target_length, :]
         if self.use_hierarchy and coarse_memory is not None:
             coarse = self.coarse_input_projection(coarse_memory)
             coarse = coarse.transpose(1, 2)
@@ -303,11 +305,11 @@ class MotionDecoder(nn.Module):
                 pad = coarse.new_zeros(B, target_length - coarse.size(1), coarse.size(2))
                 coarse = torch.cat([coarse, pad], dim=1)
             coarse = coarse[:, :target_length, :]
-            memory = memory + self.coarse_residual_scale * coarse
-        memory = self.pos_encoding(memory)
-        queries = self.query_embedding.expand(B, -1, -1)[:, :target_length, :]
-        queries = self.pos_encoding(queries)
-        decoded = self.transformer(tgt=queries, memory=memory)
+            x = x + self.coarse_residual_scale * coarse
+        x = self.pos_encoding(x)
+        x = self.transformer(x)
+        x = self.final_norm(x)
+        decoded = x  # save for hand residual if needed
         out = self.output_projection(decoded)
         if getattr(self, 'J', None) is None or not getattr(self.cfg, 'use_kinematic_decoder', False):
             return out

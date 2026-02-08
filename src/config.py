@@ -86,6 +86,26 @@ class T2M_Config:
         self.dataset_cache_in_memory = True
         self.dataset_cache_max_items = 1024
 
+        # --- Motion VAE Architecture ---
+        self.vae_latent_dim = 128
+        self.vae_checkpoint_path = "./checkpoints/vae_model.pth"
+        self.vae_num_epochs = 200
+        self.vae_learning_rate = 3e-4
+        self.kl_weight = 0.001
+        self.kl_warmup_epochs = 20
+
+        # --- Latent Flow Matching ---
+        self.flow_checkpoint_path = "./checkpoints/flow_model.pth"
+        self.flow_hidden_dim = 512
+        self.flow_layers = 12
+        self.flow_cond_dim = 768
+        self.flow_num_epochs = 200
+        self.flow_learning_rate = 2e-4
+        self.flow_sample_steps = 50
+        self.flow_cfg_guidance = 3.0
+        self.flow_cond_drop_prob = 0.1
+        self.flow_text_model = "distilbert-base-uncased"
+
         # --- GPT Architecture ---
         self.gpt_checkpoint_path = "./checkpoints/t2m_gpt_model.pth"
         self.text_model_name = "bert-base-uncased"

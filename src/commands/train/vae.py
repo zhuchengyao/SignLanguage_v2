@@ -245,6 +245,7 @@ def main():
     cfg = T2M_Config()
     cfg.apply_overrides({
         "data_root": args.data_root,
+        "dataset_name": args.dataset_name,
         "batch_size": args.batch_size,
         "val_batch_size": args.val_batch_size,
         "vae_num_epochs": args.vae_num_epochs,

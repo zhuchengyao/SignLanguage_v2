@@ -8,6 +8,7 @@ def _validate_bool_pair(args, true_flag: str, false_flag: str):
 
 def add_common_data_args(parser: argparse.ArgumentParser):
     parser.add_argument("--data_root", type=str, default=None, help="Override dataset root")
+    parser.add_argument("--dataset_name", type=str, default=None, help="Dataset subdirectory name (e.g. ASL_gloss, ASL_sentence)")
     parser.add_argument("--batch_size", type=int, default=None, help="Train batch size")
     parser.add_argument("--val_batch_size", type=int, default=None, help="Validation batch size")
 
@@ -56,6 +57,7 @@ def apply_vqvae_overrides(cfg, args: argparse.Namespace):
     cfg.apply_overrides(
         {
             "data_root": args.data_root,
+            "dataset_name": args.dataset_name,
             "batch_size": args.batch_size,
             "val_batch_size": args.val_batch_size,
             "model_max_seq_len": args.model_max_seq_len,
@@ -97,6 +99,7 @@ def apply_gpt_overrides(cfg, args: argparse.Namespace):
     cfg.apply_overrides(
         {
             "data_root": args.data_root,
+            "dataset_name": args.dataset_name,
             "batch_size": args.batch_size,
             "val_batch_size": args.val_batch_size,
             "gpt_num_epochs": args.gpt_num_epochs,

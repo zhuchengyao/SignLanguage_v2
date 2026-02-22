@@ -8,22 +8,25 @@ from .dataloader import ASLPoseDataset, BucketSampler, collate_pose_batch
 
 
 def create_pose_dataloaders(cfg, sampler_cache_name: str) -> Tuple[DataLoader, DataLoader, ASLPoseDataset]:
+    ds = cfg.dataset_name  # e.g. "ASL_gloss" or "ASL_sentence"
     train_dataset = ASLPoseDataset(
-        data_paths=[os.path.join(cfg.data_root, "ASL_gloss/train")],
+        data_paths=[os.path.join(cfg.data_root, ds, "train")],
         split="train",
+        max_seq_len=cfg.model_max_seq_len,
         cache_in_memory=cfg.dataset_cache_in_memory,
         cache_max_items=cfg.dataset_cache_max_items,
     )
     val_dataset = ASLPoseDataset(
-        data_paths=[os.path.join(cfg.data_root, "ASL_gloss/dev")],
+        data_paths=[os.path.join(cfg.data_root, ds, "dev")],
         split="dev",
+        max_seq_len=cfg.model_max_seq_len,
         extern_mean=train_dataset.pose_mean,
         extern_std=train_dataset.pose_std,
         cache_in_memory=cfg.dataset_cache_in_memory,
         cache_max_items=cfg.dataset_cache_max_items,
     )
 
-    sampler_cache_path = os.path.join(cfg.data_root, "ASL_gloss/.cache", sampler_cache_name)
+    sampler_cache_path = os.path.join(cfg.data_root, ds, ".cache", sampler_cache_name)
     train_sampler = BucketSampler(
         train_dataset,
         cfg.batch_size,

@@ -29,7 +29,7 @@ def main():
     # ==================================
     print("--- Loading Data (Using Standard DataLoader) ---")
     train_dataset = ASLPoseDataset(
-        data_paths=[os.path.join(cfg.data_root, "ASL_gloss/train")],
+        data_paths=[os.path.join(cfg.data_root, getattr(cfg, 'dataset_name', 'ASL_gloss'), "train")],
         split="train", max_seq_len=cfg.max_seq_len
     )
     

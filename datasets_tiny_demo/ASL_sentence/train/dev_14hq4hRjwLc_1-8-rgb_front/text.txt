@@ -1,0 +1,1 @@
+Now, window size is based on the finished opening that we have around the windows.

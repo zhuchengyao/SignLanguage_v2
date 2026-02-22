@@ -24,7 +24,7 @@ def evaluate(checkpoint_path: str, split: str = 'dev', output_dir: str = './outp
     model.eval()
 
     dataset = ASLPoseDataset(
-        data_paths=[os.path.join(cfg.data_root, f"ASL_gloss/{split}")],
+        data_paths=[os.path.join(cfg.data_root, getattr(cfg, 'dataset_name', 'ASL_gloss'), split)],
         split=split,
         pose_normalize=True,
         extern_mean=cfg.mean.cpu().numpy() if cfg.mean is not None else None,

@@ -1,0 +1,1 @@
+That's what your computer uses while it's running, not necessarily to store long term data but just data that's operating on at that time.

@@ -9,6 +9,7 @@ class T2M_Config:
 
         # --- Data ---
         self.data_root = "./datasets"
+        self.dataset_name = "ASL_gloss"  # subdirectory under data_root (e.g. ASL_gloss, ASL_sentence)
         self.pose_dim = 150
 
         # --- Kinematic layout ---
@@ -23,7 +24,7 @@ class T2M_Config:
         self.kinematic_scale_max = 1.4
 
         # --- VQ-VAE Architecture ---
-        self.model_max_seq_len = 500
+        self.model_max_seq_len = 1500
         self.motion_encoder_layers = 4
         self.motion_encoder_heads = 4
         self.motion_encoder_hidden_dim = 256
@@ -98,13 +99,49 @@ class T2M_Config:
         self.flow_checkpoint_path = "./checkpoints/flow_model.pth"
         self.flow_hidden_dim = 512
         self.flow_layers = 12
+        self.flow_attn_heads = 8
+        self.flow_attn_every_n = 2   # temporal self-attention every N MLP blocks
         self.flow_cond_dim = 768
-        self.flow_num_epochs = 200
+        self.flow_num_epochs = 300
         self.flow_learning_rate = 2e-4
         self.flow_sample_steps = 50
         self.flow_cfg_guidance = 3.0
         self.flow_cond_drop_prob = 0.1
         self.flow_text_model = "distilbert-base-uncased"
+
+        # --- Dual-branch VAE (body/hand decoupled) ---
+        self.dual_body_dim = 24     # 8 body joints × 3
+        self.dual_hand_dim = 126    # (21+21) hand joints × 3
+        self.dual_body_latent_dim = 64
+        self.dual_hand_latent_dim = 96
+        self.dual_body_hidden_dim = 192
+        self.dual_hand_hidden_dim = 256
+        self.dual_enc_layers = 3
+        self.dual_dec_layers = 3
+        self.dual_heads = 4
+        self.dual_dropout = 0.1
+        self.dual_body_recon_weight = 1.0
+        self.dual_hand_recon_weight = 2.0   # hands need higher fidelity
+        self.dual_sync_weight = 0.5         # wrist sync between body & hand
+        self.dual_body_vel_weight = 0.2     # stronger body smoothness
+        self.dual_body_acc_weight = 0.05
+        self.dual_hand_vel_weight = 0.1
+        self.dual_hand_acc_weight = 0.02
+        self.dual_kl_weight = 0.001
+        self.dual_kl_warmup_epochs = 20
+        self.dual_vae_checkpoint_path = "./checkpoints/dual_vae_model.pth"
+        self.dual_vae_num_epochs = 200
+        self.dual_vae_learning_rate = 3e-4
+
+        # --- Dual-branch Flow ---
+        self.dual_flow_body_checkpoint = "./checkpoints/dual_flow_body.pth"
+        self.dual_flow_hand_checkpoint = "./checkpoints/dual_flow_hand.pth"
+        self.dual_flow_hidden = 384
+        self.dual_flow_layers = 8
+        self.dual_flow_attn_heads = 8
+        self.dual_flow_attn_every_n = 2
+        self.dual_flow_num_epochs = 300
+        self.dual_flow_learning_rate = 2e-4
 
         # --- GPT Architecture ---
         self.gpt_checkpoint_path = "./checkpoints/t2m_gpt_model.pth"

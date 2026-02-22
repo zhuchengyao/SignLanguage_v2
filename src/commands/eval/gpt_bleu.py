@@ -82,7 +82,7 @@ def evaluate_bleu(vqvae_ckpt: str, gpt_ckpt: str, split: str, max_batches: int, 
     tokenizer = BertTokenizer.from_pretrained(cfg.text_model_name)
 
     # Data
-    dataset = ASLPoseDataset(data_paths=[os.path.join(cfg.data_root, f"ASL_gloss/{split}")], split=split)
+    dataset = ASLPoseDataset(data_paths=[os.path.join(cfg.data_root, getattr(cfg, 'dataset_name', 'ASL_gloss'), split)], split=split)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_pose_batch, num_workers=0)
 
     refs: List[List[int]] = []

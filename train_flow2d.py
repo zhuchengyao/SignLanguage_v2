@@ -20,7 +20,7 @@ from src.latent2d.skeleton2d import (
     FK2D,
     adjust_shoulder_mid_root,
 )
-from train_ae2d import build_pose_filelist
+from src.data_utils import build_pose_filelist
 
 
 def main():

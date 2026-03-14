@@ -1,2 +1,8 @@
-./datasets/*
-datasets/*
+datasets/
+outputs/
+wandb/
+__pycache__/
+*.pyc
+*.zip
+checkpoints/
+

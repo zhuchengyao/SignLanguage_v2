@@ -187,3 +187,29 @@ class ASLPoseDataset(Dataset):
             return item
         except Exception:
             return None
+
+
+# ---------------------------------------------------------------------------
+# HLC-NAR collate: returns (texts, pose_padded, masks) — same signature
+# but the training scripts handle BERT tokenization externally.
+# ---------------------------------------------------------------------------
+
+def collate_hlc_batch(
+    batch: List[Tuple[str, torch.Tensor]],
+) -> Tuple[Optional[List[str]], Optional[torch.Tensor], Optional[torch.Tensor]]:
+    """Collate for HLC-NAR training — identical format to collate_pose_batch."""
+    batch = [item for item in batch if item is not None]
+    if not batch:
+        return None, None, None
+    texts, seqs = zip(*batch)
+    lens = [s.size(0) for s in seqs]
+    T_max = max(lens) if lens else 0
+    padded = []
+    masks = []
+    for seq, L in zip(seqs, lens):
+        pad = T_max - L
+        padded.append(torch.cat([seq, seq.new_zeros(pad, seq.size(-1))], dim=0))
+        masks.append(
+            torch.cat([torch.ones(L, dtype=torch.bool), torch.zeros(pad, dtype=torch.bool)])
+        )
+    return list(texts), torch.stack(padded), torch.stack(masks)

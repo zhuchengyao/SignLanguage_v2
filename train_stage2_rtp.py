@@ -4,6 +4,8 @@ Freezes HLC codebooks. Trains RTP, Token Predictor, NAR Decoder, and Length Pred
 Losses: reconstruction + rhythm alignment + token prediction CE + length prediction.
 """
 
+import gc
+import math
 import os
 import argparse
 from datetime import datetime
@@ -119,7 +121,7 @@ def main():
             )
             tok = {k: v.to(device) for k, v in tok.items()}
 
-            out = model.forward_train(tok, pose_seq, masks)
+            out = model.forward_train(tok, pose_seq, masks, stage=2)
 
             loss = (
                 cfg.recon_loss_weight * out["recon_loss"]
@@ -150,7 +152,11 @@ def main():
                     "stage2/len_loss": out["length_loss"].item(),
                 })
 
+            del out, loss, tok, pose_seq, masks
+
         scheduler.step()
+        gc.collect()
+        torch.cuda.empty_cache()
 
         # ---- Validation ----
         model.eval()
@@ -167,9 +173,12 @@ def main():
                     truncation=True, max_length=128,
                 )
                 tok = {k: v.to(device) for k, v in tok.items()}
-                out = model.forward_train(tok, pose_seq, masks)
-                val_total += out["recon_loss"].item()
-                val_count += 1
+                out = model.forward_train(tok, pose_seq, masks, stage=2)
+                r = out["recon_loss"].item()
+                if math.isfinite(r):
+                    val_total += r
+                    val_count += 1
+                del out, tok, pose_seq, masks
 
         val_loss = val_total / max(val_count, 1)
         print(f"Epoch {epoch+1}: val_recon={val_loss:.4f}")
@@ -178,9 +187,12 @@ def main():
         if is_best:
             best_loss = val_loss
 
+        gc.collect()
+        torch.cuda.empty_cache()
+
         ckpt_data = {
             "epoch": epoch,
-            "model_state_dict": model.state_dict(),
+            "model_state_dict": {k: v.cpu() for k, v in model.state_dict().items()},
             "optimizer_state_dict": optimizer.state_dict(),
             "scheduler_state_dict": scheduler.state_dict(),
             "best_loss": best_loss,
@@ -190,6 +202,9 @@ def main():
         if is_best:
             torch.save(ckpt_data, cfg.stage2_ckpt)
             print(f"  Saved best stage2 model (val_recon={val_loss:.4f})")
+        del ckpt_data
+        gc.collect()
+        torch.cuda.empty_cache()
 
     print("Stage 2 training complete!")
     if args.wandb:

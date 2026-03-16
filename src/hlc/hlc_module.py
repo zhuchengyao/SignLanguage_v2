@@ -112,12 +112,6 @@ class HLCModule(nn.Module):
         vq_out = self.vq(body_shape_feat, hand_shape_feat,
                          body_motion_feat, hand_motion_feat)
 
-        vq_out["raw_features"] = {
-            "body_shape": body_shape_feat,
-            "hand_shape": hand_shape_feat,
-            "body_motion": body_motion_feat,
-            "hand_motion": hand_motion_feat,
-        }
         return vq_out
 
     def get_tokens(self, pose_seq: torch.Tensor,

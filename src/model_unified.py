@@ -17,7 +17,7 @@ from .config_hlc import HLC_NAR_Config
 from .hlc.hlc_module import HLCModule
 from .model_nar import NARDecoder, TokenPredictor, LengthPredictor
 from .rtp import RTPModule, compute_gt_rhythm
-from .losses_kals import kals_loss
+from .losses_kals import kals_loss, bone_length_constancy_loss
 
 
 class HLC_NAR_Model(nn.Module):
@@ -92,12 +92,17 @@ class HLC_NAR_Model(nn.Module):
         tokenized_text: dict,
         pose_seq: torch.Tensor,
         pose_mask: torch.Tensor,
+        stage: int = 3,
     ) -> Dict[str, Any]:
         """
-        Full training forward pass.
+        Stage-aware training forward pass.
+
+        stage 1: HLC + NAR reconstruction warm-up (skip token predictor / length predictor / RTP)
+        stage 2: RTP alignment (add token predictor / length predictor / RTP; skip full KALS)
+        stage 3: joint fine-tuning (everything)
+
         pose_seq: (B, T, 150) normalised.
         pose_mask: (B, T) bool.
-        Returns dict with all losses and intermediates.
         """
         B, T, _ = pose_seq.shape
 
@@ -106,22 +111,17 @@ class HLC_NAR_Model(nn.Module):
 
         # --- HLC encode GT pose ---
         hlc_out = self.hlc.encode(pose_seq, pose_mask)
-        decoder_input = self.hlc.quantized_to_decoder_input(hlc_out)  # (B, T, 4*D)
+        decoder_input = self.hlc.quantized_to_decoder_input(hlc_out)
 
-        # --- Length prediction ---
-        pred_len = self.length_predictor(text_cls)
-        gt_len = pose_mask.sum(dim=1).float()
-
-        # --- RTP ---
-        phase = self.rtp(text_features, T, text_mask)
-        gt_rhythm = compute_gt_rhythm(pose_seq, pose_mask)
+        # --- RTP phase (stage >= 2 only; stage 1 skips phase modulation) ---
+        phase = self.rtp(text_features, T, text_mask) if stage >= 2 else None
 
         # --- NAR Decode from HLC tokens ---
         pred_xy_flat = self.nar_decoder(
             decoder_input, text_features,
             phase=phase, text_mask=text_mask, target_mask=pose_mask,
-            rtp_module=self.rtp,
-        )  # (B, T, 100)
+            rtp_module=self.rtp if phase is not None else None,
+        )
 
         # --- Reconstruction loss ---
         pred_xy = pred_xy_flat.view(B, T, 50, 2)
@@ -129,9 +129,9 @@ class HLC_NAR_Model(nn.Module):
         gt_body = pose_seq[..., :24].reshape(B, T, 8, 3)[..., :2]
         gt_right = pose_seq[..., 24:87].reshape(B, T, 21, 3)[..., :2]
         gt_left = pose_seq[..., 87:150].reshape(B, T, 21, 3)[..., :2]
-        gt_xy = torch.cat([gt_body, gt_left, gt_right], dim=2)  # (B, T, 50, 2)
+        gt_xy = torch.cat([gt_body, gt_left, gt_right], dim=2)
 
-        valid = pose_mask.unsqueeze(-1).unsqueeze(-1).float()  # (B, T, 1, 1)
+        valid = pose_mask.unsqueeze(-1).unsqueeze(-1).float()
 
         body_recon = F.mse_loss(
             pred_xy[:, :, :8] * valid, gt_xy[:, :, :8] * valid, reduction="sum"
@@ -145,46 +145,58 @@ class HLC_NAR_Model(nn.Module):
             + self.cfg.hand_recon_weight * hand_recon
         ) / denom
 
-        # --- VQ loss ---
+        # --- VQ loss (detach in stage 2 where codebooks are frozen) ---
         vq_loss = hlc_out["vq_loss"]
 
-        # --- Token prediction loss ---
-        tok_logits = self.token_predictor(text_features, T, text_mask)
-        gt_indices = hlc_out["indices"]
-        tok_pred_loss = sum(
-            F.cross_entropy(
-                tok_logits[k].reshape(-1, tok_logits[k].size(-1)),
-                gt_indices[k].reshape(-1),
-                reduction="mean",
-            )
-            for k in gt_indices
-        ) / len(gt_indices)
+        result: Dict[str, Any] = {
+            "recon_loss": recon_loss,
+            "vq_loss": vq_loss if stage != 2 else vq_loss.detach(),
+            "pred_xy": pred_xy.detach(),
+        }
 
-        # --- Length prediction loss ---
-        len_loss = F.l1_loss(pred_len, gt_len)
+        # --- Token prediction loss (stage >= 2) ---
+        if stage >= 2:
+            tok_logits = self.token_predictor(text_features, T, text_mask)
+            gt_indices = hlc_out["indices"]
+            tok_pred_loss = sum(
+                F.cross_entropy(
+                    tok_logits[k].reshape(-1, tok_logits[k].size(-1)),
+                    gt_indices[k].reshape(-1),
+                    reduction="mean",
+                )
+                for k in gt_indices
+            ) / len(gt_indices)
+            result["token_pred_loss"] = tok_pred_loss
 
-        # --- RTP rhythm loss ---
-        rtp_loss = F.mse_loss(phase * valid[..., 0], gt_rhythm * valid[..., 0])
+        # --- Length prediction loss (stage >= 2) ---
+        if stage >= 2:
+            pred_len = self.length_predictor(text_cls)
+            gt_len = pose_mask.sum(dim=1).float()
+            result["length_loss"] = F.l1_loss(pred_len, gt_len)
+
+        # --- RTP rhythm loss (stage >= 2) ---
+        if stage >= 2:
+            gt_rhythm = compute_gt_rhythm(pose_seq, pose_mask)
+            rtp_loss = F.mse_loss(phase * valid[..., 0], gt_rhythm * valid[..., 0])
+            result["rtp_loss"] = rtp_loss
+            result["phase"] = phase.detach()
 
         # --- KALS ---
-        kals_total, kals_detail = kals_loss(
-            pred_xy, pose_mask,
-            w_bone=self.cfg.kals_bone_weight,
-            w_angle=self.cfg.kals_angle_weight,
-            w_sym=self.cfg.kals_symmetry_weight,
-        )
+        if stage >= 3:
+            kals_total, kals_detail = kals_loss(
+                pred_xy, pose_mask,
+                w_bone=self.cfg.kals_bone_weight,
+                w_angle=self.cfg.kals_angle_weight,
+                w_sym=self.cfg.kals_symmetry_weight,
+            )
+            result["kals_loss"] = kals_total
+            result.update({f"kals_{k}": v for k, v in kals_detail.items()})
+        else:
+            result["kals_bone_loss"] = bone_length_constancy_loss(
+                pred_xy.detach(), pose_mask
+            )
 
-        return {
-            "recon_loss": recon_loss,
-            "vq_loss": vq_loss,
-            "token_pred_loss": tok_pred_loss,
-            "length_loss": len_loss,
-            "rtp_loss": rtp_loss,
-            "kals_loss": kals_total,
-            "pred_xy": pred_xy.detach(),
-            "phase": phase.detach(),
-            **{f"kals_{k}": v for k, v in kals_detail.items()},
-        }
+        return result
 
     # ------------------------------------------------------------------
     # Inference forward

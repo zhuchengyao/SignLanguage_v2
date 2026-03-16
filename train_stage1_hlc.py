@@ -4,6 +4,8 @@ Trains the HLC encoders + VQ codebooks + NAR decoder to reconstruct GT poses.
 Only bone-length KALS constraint is active; RTP and Token Predictor are NOT trained.
 """
 
+import gc
+import math
 import os
 import argparse
 from datetime import datetime
@@ -121,7 +123,7 @@ def main():
             )
             tok = {k: v.to(device) for k, v in tok.items()}
 
-            out = model.forward_train(tok, pose_seq, masks)
+            out = model.forward_train(tok, pose_seq, masks, stage=1)
 
             vq_w = cfg.vq_loss_weight * min(1.0, (epoch + 1) / max(cfg.vq_warmup_epochs, 1))
             loss = (
@@ -150,7 +152,11 @@ def main():
                     "stage1/bone": out["kals_bone_loss"].item(),
                 })
 
+            del out, loss, tok, pose_seq, masks
+
         scheduler.step()
+        gc.collect()
+        torch.cuda.empty_cache()
 
         # ---- Validation ----
         model.eval()
@@ -167,10 +173,14 @@ def main():
                     truncation=True, max_length=128,
                 )
                 tok = {k: v.to(device) for k, v in tok.items()}
-                out = model.forward_train(tok, pose_seq, masks)
-                val_recon += out["recon_loss"].item()
-                val_vq += out["vq_loss"].item()
-                val_count += 1
+                out = model.forward_train(tok, pose_seq, masks, stage=1)
+                r = out["recon_loss"].item()
+                v = out["vq_loss"].item()
+                if math.isfinite(r) and math.isfinite(v):
+                    val_recon += r
+                    val_vq += v
+                    val_count += 1
+                del out, tok, pose_seq, masks
 
         val_loss = val_recon / max(val_count, 1)
         print(f"Epoch {epoch+1}: val_recon={val_loss:.4f}, val_vq={val_vq/max(val_count,1):.4f}")
@@ -183,9 +193,12 @@ def main():
         if is_best:
             best_loss = val_loss
 
+        gc.collect()
+        torch.cuda.empty_cache()
+
         ckpt_data = {
             "epoch": epoch,
-            "model_state_dict": model.state_dict(),
+            "model_state_dict": {k: v.cpu() for k, v in model.state_dict().items()},
             "optimizer_state_dict": optimizer.state_dict(),
             "scheduler_state_dict": scheduler.state_dict(),
             "best_loss": best_loss,
@@ -195,6 +208,9 @@ def main():
         if is_best:
             torch.save(ckpt_data, cfg.stage1_ckpt)
             print(f"  Saved best model (val_recon={val_loss:.4f})")
+        del ckpt_data
+        gc.collect()
+        torch.cuda.empty_cache()
 
     print("Stage 1 training complete!")
     if args.wandb:

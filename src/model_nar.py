@@ -216,4 +216,5 @@ class NARDecoder(nn.Module):
         )
         decoded = self.norm(decoded)
 
-        return self.output_head(decoded)
+        out = self.output_head(decoded)
+        return out.clamp(-10.0, 10.0)

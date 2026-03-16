@@ -50,21 +50,22 @@ class VQCodebook(nn.Module):
         quantized = self.embedding(indices).view(B, T, D)
 
         if self.training:
-            self.usage_count.index_add_(
-                0, indices, torch.ones_like(indices, dtype=torch.float)
-            )
-            encodings = F.one_hot(indices, self.codebook_size).float()
-            self.ema_cluster_size.mul_(self.ema_decay).add_(
-                encodings.sum(0), alpha=1 - self.ema_decay
-            )
-            dw = encodings.t() @ flat
-            self.ema_w.mul_(self.ema_decay).add_(dw, alpha=1 - self.ema_decay)
-            n = self.ema_cluster_size.sum()
-            cluster_size = (
-                (self.ema_cluster_size + self.epsilon)
-                / (n + self.codebook_size * self.epsilon) * n
-            )
-            self.embedding.weight.data.copy_(self.ema_w / cluster_size.unsqueeze(1))
+            with torch.no_grad():
+                self.usage_count.index_add_(
+                    0, indices, torch.ones_like(indices, dtype=torch.float)
+                )
+                encodings = F.one_hot(indices, self.codebook_size).float()
+                self.ema_cluster_size.mul_(self.ema_decay).add_(
+                    encodings.sum(0), alpha=1 - self.ema_decay
+                )
+                dw = encodings.t() @ flat.detach()
+                self.ema_w.mul_(self.ema_decay).add_(dw, alpha=1 - self.ema_decay)
+                n = self.ema_cluster_size.sum()
+                cluster_size = (
+                    (self.ema_cluster_size + self.epsilon)
+                    / (n + self.codebook_size * self.epsilon) * n
+                )
+                self.embedding.weight.data.copy_(self.ema_w / cluster_size.unsqueeze(1))
 
         e_latent_loss = F.mse_loss(quantized.detach(), z_e)
         vq_loss = self.commitment_cost * e_latent_loss

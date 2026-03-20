@@ -60,9 +60,15 @@ class LengthPredictor(nn.Module):
         )
 
     def forward(self, text_cls: torch.Tensor) -> torch.Tensor:
-        """text_cls: (B, text_dim). Returns (B,) predicted length (continuous)."""
+        """text_cls: (B, text_dim). Returns (B,) predicted length (continuous).
+
+        Uses softplus to ensure always-positive output with full gradient flow.
+        Raw output in (-inf, inf) → softplus → (0, inf) → shift by 1 → (1, inf).
+        At inference we additionally clamp to max_len.
+        """
         raw = self.net(text_cls).squeeze(-1)
-        return raw.clamp(1.0, float(self.max_len))
+        # softplus gives smooth gradient everywhere (no zero-gradient cliff like clamp)
+        return F.softplus(raw) + 1.0
 
     @torch.no_grad()
     def predict(self, text_cls: torch.Tensor) -> torch.Tensor:
@@ -217,4 +223,4 @@ class NARDecoder(nn.Module):
         decoded = self.norm(decoded)
 
         out = self.output_head(decoded)
-        return out.clamp(-10.0, 10.0)
+        return out

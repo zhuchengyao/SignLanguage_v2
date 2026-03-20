@@ -60,8 +60,8 @@ class HLC_NAR_Model(nn.Module):
         )
 
         # Cache for mean/std (set externally by training script)
-        self.register_buffer("pose_mean", torch.zeros(150), persistent=False)
-        self.register_buffer("pose_std", torch.ones(150), persistent=False)
+        self.register_buffer("pose_mean", torch.zeros(150), persistent=True)
+        self.register_buffer("pose_std", torch.ones(150), persistent=True)
 
     # ------------------------------------------------------------------
     # Text encoding

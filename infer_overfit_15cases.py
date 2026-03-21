@@ -151,6 +151,10 @@ def main():
         pose150 = xy50_to_pose150(pred_xy_denorm)
 
         safe = sid.replace("/", "_").replace(" ", "_")
+
+        # Save raw keypoints as .npy  (T, 150) — denormalized, conf=1.0
+        np.save(os.path.join(out_dir, f"{i:02d}_{safe}.npy"), pose150)
+
         gif_path = os.path.join(out_dir, f"{i:02d}_{safe}.gif")
         viz.create_animation(pose150, gif_path,
                              title=f"{text[:50]}", fps=15)
